@@ -185,15 +185,23 @@ http.Request prepareHttpRequest({
   bool overrideContentType = false,
 }) {
   var request = http.Request(method, url);
-  if (headers.getValueContentType() != null) {
-    request.headers[HttpHeaders.contentTypeHeader] = headers
-        .getValueContentType()!;
-    if (!overrideContentType) {
+  final contentTypeHeader = headers.getValueContentType();
+  if (contentTypeHeader != null) {
+    if (overrideContentType) {
+      request.headers[HttpHeaders.contentTypeHeader] = contentTypeHeader;
+    } else {
       headers.removeKeyContentType();
     }
   }
   if (body != null) {
     request.body = body;
+    if (!overrideContentType && contentTypeHeader != null) {
+      final lowerCaseContentType = contentTypeHeader.toLowerCase();
+      final hasCharset = lowerCaseContentType.contains('charset=');
+      request.headers[HttpHeaders.contentTypeHeader] = hasCharset
+          ? contentTypeHeader
+          : '$contentTypeHeader; charset=utf-8';
+    }
     headers[HttpHeaders.contentLengthHeader] = request.bodyBytes.length
         .toString();
   }
