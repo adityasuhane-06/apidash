@@ -80,6 +80,40 @@ extension TestFailureTypeLabel on TestFailureType {
   }
 }
 
+enum TestHealingDecision { none, pending, approved, rejected, applied }
+
+extension TestHealingDecisionLabel on TestHealingDecision {
+  String get label {
+    switch (this) {
+      case TestHealingDecision.none:
+        return 'None';
+      case TestHealingDecision.pending:
+        return 'Pending';
+      case TestHealingDecision.approved:
+        return 'Approved';
+      case TestHealingDecision.rejected:
+        return 'Rejected';
+      case TestHealingDecision.applied:
+        return 'Applied';
+    }
+  }
+
+  String get code {
+    switch (this) {
+      case TestHealingDecision.none:
+        return 'none';
+      case TestHealingDecision.pending:
+        return 'pending';
+      case TestHealingDecision.approved:
+        return 'approved';
+      case TestHealingDecision.rejected:
+        return 'rejected';
+      case TestHealingDecision.applied:
+        return 'applied';
+    }
+  }
+}
+
 class AgenticTestCase {
   const AgenticTestCase({
     required this.id,
@@ -97,6 +131,10 @@ class AgenticTestCase {
     this.responseStatusCode,
     this.responseTimeMs,
     this.failureType = TestFailureType.none,
+    this.healingSuggestion,
+    this.healingAssertions = const <String>[],
+    this.healingDecision = TestHealingDecision.none,
+    this.healingIteration = 0,
   });
 
   final String id;
@@ -114,6 +152,10 @@ class AgenticTestCase {
   final int? responseStatusCode;
   final int? responseTimeMs;
   final TestFailureType failureType;
+  final String? healingSuggestion;
+  final List<String> healingAssertions;
+  final TestHealingDecision healingDecision;
+  final int healingIteration;
 
   AgenticTestCase copyWith({
     String? id,
@@ -131,9 +173,14 @@ class AgenticTestCase {
     int? responseStatusCode,
     int? responseTimeMs,
     TestFailureType? failureType,
+    String? healingSuggestion,
+    List<String>? healingAssertions,
+    TestHealingDecision? healingDecision,
+    int? healingIteration,
     bool clearExecutionSummary = false,
     bool clearResponseStatusCode = false,
     bool clearResponseTimeMs = false,
+    bool clearHealingSuggestion = false,
   }) {
     return AgenticTestCase(
       id: id ?? this.id,
@@ -157,6 +204,12 @@ class AgenticTestCase {
           ? null
           : (responseTimeMs ?? this.responseTimeMs),
       failureType: failureType ?? this.failureType,
+      healingSuggestion: clearHealingSuggestion
+          ? null
+          : (healingSuggestion ?? this.healingSuggestion),
+      healingAssertions: healingAssertions ?? this.healingAssertions,
+      healingDecision: healingDecision ?? this.healingDecision,
+      healingIteration: healingIteration ?? this.healingIteration,
     );
   }
 
@@ -204,6 +257,10 @@ class AgenticTestCase {
       responseStatusCode: _parseInt(json['response_status_code']),
       responseTimeMs: _parseInt(json['response_time_ms']),
       failureType: _parseFailureType(json['failure_type']),
+      healingSuggestion: (json['healing_suggestion'] as String?)?.trim(),
+      healingAssertions: _parseStringList(json['healing_assertions']),
+      healingDecision: _parseHealingDecision(json['healing_decision']),
+      healingIteration: _parseInt(json['healing_iteration']) ?? 0,
     );
   }
 
@@ -224,6 +281,10 @@ class AgenticTestCase {
       'response_status_code': responseStatusCode,
       'response_time_ms': responseTimeMs,
       'failure_type': failureType.code,
+      'healing_suggestion': healingSuggestion,
+      'healing_assertions': healingAssertions,
+      'healing_decision': healingDecision.code,
+      'healing_iteration': healingIteration,
     };
   }
 
@@ -246,6 +307,18 @@ class AgenticTestCase {
       'unsupported_assertion' => TestFailureType.unsupportedAssertion,
       'unknown' => TestFailureType.unknown,
       _ => TestFailureType.none,
+    };
+  }
+
+  static TestHealingDecision _parseHealingDecision(dynamic value) {
+    final raw = value?.toString().trim().toLowerCase();
+    return switch (raw) {
+      'none' => TestHealingDecision.none,
+      'pending' => TestHealingDecision.pending,
+      'approved' => TestHealingDecision.approved,
+      'rejected' => TestHealingDecision.rejected,
+      'applied' => TestHealingDecision.applied,
+      _ => TestHealingDecision.none,
     };
   }
 

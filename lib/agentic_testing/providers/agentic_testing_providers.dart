@@ -7,6 +7,7 @@ import '../services/state_machine.dart';
 import '../services/test_executor.dart';
 import '../services/test_generator.dart';
 import '../services/workflow_checkpoint_storage.dart';
+import '../services/healing_planner.dart';
 
 final agenticTestGeneratorProvider = Provider<AgenticTestGenerator>((ref) {
   return AgenticTestGenerator(
@@ -16,6 +17,12 @@ final agenticTestGeneratorProvider = Provider<AgenticTestGenerator>((ref) {
 
 final agenticTestExecutorProvider = Provider<AgenticTestExecutor>((ref) {
   return AgenticTestExecutor();
+});
+
+final agenticTestHealingPlannerProvider = Provider<AgenticTestHealingPlanner>((
+  ref,
+) {
+  return const AgenticTestHealingPlanner();
 });
 
 final agenticWorkflowCheckpointStorageProvider =
@@ -30,6 +37,7 @@ final agenticTestingStateMachineProvider =
       return AgenticTestingStateMachine(
         testGenerator: ref.read(agenticTestGeneratorProvider),
         testExecutor: ref.read(agenticTestExecutorProvider),
+        healingPlanner: ref.read(agenticTestHealingPlannerProvider),
         checkpointStorage: ref.read(agenticWorkflowCheckpointStorageProvider),
       );
     });

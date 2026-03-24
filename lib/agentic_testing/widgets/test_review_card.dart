@@ -8,11 +8,15 @@ class TestReviewCard extends StatelessWidget {
     required this.testCase,
     this.onApprove,
     this.onReject,
+    this.onApproveHealing,
+    this.onRejectHealing,
   });
 
   final AgenticTestCase testCase;
   final VoidCallback? onApprove;
   final VoidCallback? onReject;
+  final VoidCallback? onApproveHealing;
+  final VoidCallback? onRejectHealing;
 
   @override
   Widget build(BuildContext context) {
@@ -32,6 +36,16 @@ class TestReviewCard extends StatelessWidget {
         testCase.failureType != TestFailureType.none &&
         (testCase.executionStatus == TestExecutionStatus.failed ||
             testCase.executionStatus == TestExecutionStatus.skipped);
+    final healingDecisionColor = switch (testCase.healingDecision) {
+      TestHealingDecision.none => colorScheme.outline,
+      TestHealingDecision.pending => Colors.orange,
+      TestHealingDecision.approved => Colors.green,
+      TestHealingDecision.rejected => Colors.red,
+      TestHealingDecision.applied => Colors.blue,
+    };
+    final canShowReviewActions = onApprove != null || onReject != null;
+    final canShowHealingActions =
+        onApproveHealing != null || onRejectHealing != null;
 
     return Card(
       child: Padding(
@@ -87,6 +101,12 @@ class TestReviewCard extends StatelessWidget {
                     side: const BorderSide(color: Colors.redAccent),
                     label: Text(testCase.failureType.code),
                   ),
+                if (testCase.healingDecision != TestHealingDecision.none)
+                  Chip(
+                    visualDensity: VisualDensity.compact,
+                    side: BorderSide(color: healingDecisionColor),
+                    label: Text('Heal: ${testCase.healingDecision.label}'),
+                  ),
               ],
             ),
             const SizedBox(height: 8),
@@ -141,23 +161,63 @@ class TestReviewCard extends StatelessWidget {
                 ),
               ],
             ],
-            const SizedBox(height: 10),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: onReject,
-                  icon: const Icon(Icons.close_rounded),
-                  label: const Text('Reject'),
-                ),
-                const SizedBox(width: 8),
-                FilledButton.icon(
-                  onPressed: onApprove,
-                  icon: const Icon(Icons.check_rounded),
-                  label: const Text('Approve'),
+            if ((testCase.healingSuggestion ?? '').trim().isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Healing Plan',
+                style: Theme.of(
+                  context,
+                ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 4),
+              Text(testCase.healingSuggestion!),
+              if (testCase.healingAssertions.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                ...testCase.healingAssertions.map(
+                  (line) => Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Text('- $line'),
+                  ),
                 ),
               ],
-            ),
+            ],
+            const SizedBox(height: 10),
+            if (canShowReviewActions)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: onReject,
+                    icon: const Icon(Icons.close_rounded),
+                    label: const Text('Reject'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: onApprove,
+                    icon: const Icon(Icons.check_rounded),
+                    label: const Text('Approve'),
+                  ),
+                ],
+              ),
+            if (canShowHealingActions) ...[
+              if (canShowReviewActions) const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: onRejectHealing,
+                    icon: const Icon(Icons.close_rounded),
+                    label: const Text('Reject Heal'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: onApproveHealing,
+                    icon: const Icon(Icons.healing_outlined),
+                    label: const Text('Approve Heal'),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),

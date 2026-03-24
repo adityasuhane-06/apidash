@@ -4,6 +4,10 @@ enum AgenticWorkflowState {
   awaitingApproval,
   executing,
   resultsReady,
+  analyzingFailures,
+  awaitingHealApproval,
+  reExecuting,
+  finalReport,
 }
 
 extension AgenticWorkflowStateLabel on AgenticWorkflowState {
@@ -19,6 +23,14 @@ extension AgenticWorkflowStateLabel on AgenticWorkflowState {
         return 'EXECUTING';
       case AgenticWorkflowState.resultsReady:
         return 'RESULTS_READY';
+      case AgenticWorkflowState.analyzingFailures:
+        return 'ANALYZING_FAILURES';
+      case AgenticWorkflowState.awaitingHealApproval:
+        return 'AWAITING_HEAL_APPROVAL';
+      case AgenticWorkflowState.reExecuting:
+        return 'RE_EXECUTING';
+      case AgenticWorkflowState.finalReport:
+        return 'FINAL_REPORT';
     }
   }
 }

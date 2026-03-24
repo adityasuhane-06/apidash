@@ -103,6 +103,30 @@ class AgenticWorkflowContext {
       )
       .length;
 
+  int get healPendingCount => generatedTests
+      .where(
+        (testCase) => testCase.healingDecision == TestHealingDecision.pending,
+      )
+      .length;
+
+  int get healApprovedCount => generatedTests
+      .where(
+        (testCase) => testCase.healingDecision == TestHealingDecision.approved,
+      )
+      .length;
+
+  int get healRejectedCount => generatedTests
+      .where(
+        (testCase) => testCase.healingDecision == TestHealingDecision.rejected,
+      )
+      .length;
+
+  int get healAppliedCount => generatedTests
+      .where(
+        (testCase) => testCase.healingDecision == TestHealingDecision.applied,
+      )
+      .length;
+
   AgenticWorkflowContext copyWith({
     AgenticWorkflowState? workflowState,
     String? endpoint,

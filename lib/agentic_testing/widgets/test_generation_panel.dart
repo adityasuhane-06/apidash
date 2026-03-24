@@ -2,6 +2,7 @@ import 'package:apidash/providers/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/test_case_model.dart';
 import '../models/workflow_state.dart';
 import '../providers/agentic_testing_providers.dart';
 import 'test_review_card.dart';
@@ -85,7 +86,11 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
         workflow.workflowState == AgenticWorkflowState.generating;
     final isExecuting =
         workflow.workflowState == AgenticWorkflowState.executing;
-    final isBusy = isGenerating || isExecuting;
+    final isAnalyzing =
+        workflow.workflowState == AgenticWorkflowState.analyzingFailures;
+    final isReExecuting =
+        workflow.workflowState == AgenticWorkflowState.reExecuting;
+    final isBusy = isGenerating || isExecuting || isAnalyzing || isReExecuting;
     final canGenerate = workflow.workflowState == AgenticWorkflowState.idle;
 
     final stateColor = switch (workflow.workflowState) {
@@ -94,6 +99,10 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
       AgenticWorkflowState.awaitingApproval => Colors.orange,
       AgenticWorkflowState.executing => Colors.purple,
       AgenticWorkflowState.resultsReady => Colors.green,
+      AgenticWorkflowState.analyzingFailures => Colors.deepPurple,
+      AgenticWorkflowState.awaitingHealApproval => Colors.teal,
+      AgenticWorkflowState.reExecuting => Colors.indigo,
+      AgenticWorkflowState.finalReport => Colors.green.shade700,
     };
 
     return Column(
@@ -107,7 +116,7 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
         ),
         const SizedBox(height: 4),
         Text(
-          'State Machine: IDLE -> GENERATING -> AWAITING_APPROVAL -> EXECUTING -> RESULTS_READY',
+          'State Machine: IDLE -> GENERATING -> AWAITING_APPROVAL -> EXECUTING -> RESULTS_READY -> ANALYZING_FAILURES -> AWAITING_HEAL_APPROVAL -> RE_EXECUTING -> FINAL_REPORT',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 12),
@@ -191,6 +200,11 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
             'Passed: ${workflow.passedCount}  Failed: ${workflow.failedCount}  Skipped: ${workflow.skippedCount}  Not Run: ${workflow.notRunCount}',
             style: Theme.of(context).textTheme.bodySmall,
           ),
+          const SizedBox(height: 4),
+          Text(
+            'Heal Pending: ${workflow.healPendingCount}  Heal Approved: ${workflow.healApprovedCount}  Heal Rejected: ${workflow.healRejectedCount}  Heal Applied: ${workflow.healAppliedCount}',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
         ],
         const SizedBox(height: 8),
         Expanded(
@@ -217,6 +231,20 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
                           workflow.workflowState ==
                               AgenticWorkflowState.awaitingApproval
                           ? () => notifier.rejectTest(testCase.id)
+                          : null,
+                      onApproveHealing:
+                          workflow.workflowState ==
+                                  AgenticWorkflowState.awaitingHealApproval &&
+                              testCase.healingDecision ==
+                                  TestHealingDecision.pending
+                          ? () => notifier.approveHealing(testCase.id)
+                          : null,
+                      onRejectHealing:
+                          workflow.workflowState ==
+                                  AgenticWorkflowState.awaitingHealApproval &&
+                              testCase.healingDecision ==
+                                  TestHealingDecision.pending
+                          ? () => notifier.rejectHealing(testCase.id)
                           : null,
                     );
                   },
@@ -254,15 +282,75 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
               TextButton(onPressed: notifier.reset, child: const Text('Reset')),
             ],
           ),
-        ] else if (workflow.generatedTests.isNotEmpty &&
-            workflow.workflowState == AgenticWorkflowState.resultsReady) ...[
+        ] else if (workflow.workflowState ==
+            AgenticWorkflowState.resultsReady) ...[
           const SizedBox(height: 10),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: notifier.reset,
-              child: const Text('Start Over'),
-            ),
+          Row(
+            children: [
+              FilledButton.icon(
+                onPressed: workflow.failedCount == 0
+                    ? null
+                    : () => notifier.generateHealingPlans(),
+                icon: const Icon(Icons.healing_outlined),
+                label: const Text('Generate Healing Plans'),
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: notifier.reset,
+                child: const Text('Start Over'),
+              ),
+            ],
+          ),
+        ] else if (workflow.workflowState ==
+            AgenticWorkflowState.awaitingHealApproval) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              FilledButton.icon(
+                onPressed: workflow.healPendingCount == 0
+                    ? null
+                    : notifier.approveAllHealing,
+                icon: const Icon(Icons.check_circle_outline),
+                label: const Text('Approve All Heal'),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: workflow.healPendingCount == 0
+                    ? null
+                    : notifier.rejectAllHealing,
+                icon: const Icon(Icons.cancel_outlined),
+                label: const Text('Reject All Heal'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                onPressed: workflow.healApprovedCount == 0
+                    ? null
+                    : () => notifier.reExecuteHealedTests(),
+                icon: const Icon(Icons.play_arrow_outlined),
+                label: const Text('Apply & Re-run'),
+              ),
+              const Spacer(),
+              TextButton(onPressed: notifier.reset, child: const Text('Reset')),
+            ],
+          ),
+        ] else if (workflow.generatedTests.isNotEmpty &&
+            workflow.workflowState == AgenticWorkflowState.finalReport) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              FilledButton.icon(
+                onPressed: workflow.failedCount == 0
+                    ? null
+                    : () => notifier.generateHealingPlans(),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Run Another Healing Iteration'),
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: notifier.reset,
+                child: const Text('Start Over'),
+              ),
+            ],
           ),
         ],
       ],

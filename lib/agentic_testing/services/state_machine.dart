@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import '../models/test_case_model.dart';
 import '../models/workflow_context.dart';
 import '../models/workflow_state.dart';
+import 'healing_planner.dart';
 import 'test_executor.dart';
 import 'test_generator.dart';
 import 'workflow_checkpoint_storage.dart';
@@ -25,14 +26,17 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
   AgenticTestingStateMachine({
     required AgenticTestGenerator testGenerator,
     required AgenticTestExecutor testExecutor,
+    required AgenticTestHealingPlanner healingPlanner,
     required AgenticWorkflowCheckpointStorage checkpointStorage,
   }) : _testGenerator = testGenerator,
        _testExecutor = testExecutor,
+       _healingPlanner = healingPlanner,
        _checkpointStorage = checkpointStorage,
        super(const AgenticWorkflowContext());
 
   final AgenticTestGenerator _testGenerator;
   final AgenticTestExecutor _testExecutor;
+  final AgenticTestHealingPlanner _healingPlanner;
   final AgenticWorkflowCheckpointStorage _checkpointStorage;
 
   static const Map<AgenticWorkflowState, Set<AgenticWorkflowState>>
@@ -51,7 +55,29 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
       AgenticWorkflowState.awaitingApproval,
       AgenticWorkflowState.idle,
     },
-    AgenticWorkflowState.resultsReady: {AgenticWorkflowState.idle},
+    AgenticWorkflowState.resultsReady: {
+      AgenticWorkflowState.analyzingFailures,
+      AgenticWorkflowState.idle,
+    },
+    AgenticWorkflowState.analyzingFailures: {
+      AgenticWorkflowState.awaitingHealApproval,
+      AgenticWorkflowState.resultsReady,
+      AgenticWorkflowState.idle,
+    },
+    AgenticWorkflowState.awaitingHealApproval: {
+      AgenticWorkflowState.reExecuting,
+      AgenticWorkflowState.resultsReady,
+      AgenticWorkflowState.idle,
+    },
+    AgenticWorkflowState.reExecuting: {
+      AgenticWorkflowState.finalReport,
+      AgenticWorkflowState.awaitingHealApproval,
+      AgenticWorkflowState.idle,
+    },
+    AgenticWorkflowState.finalReport: {
+      AgenticWorkflowState.analyzingFailures,
+      AgenticWorkflowState.idle,
+    },
   };
 
   Future<void> hydrateFromCheckpoint() async {
@@ -120,7 +146,7 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
 
       _transitionTo(
         AgenticWorkflowState.awaitingApproval,
-        generatedTests: tests,
+        generatedTests: _resetExecutionAndHealing(tests),
         statusMessage:
             'Generated ${tests.length} test cases. Review and approve before execution.',
         clearErrorMessage: true,
@@ -165,16 +191,180 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
       _transitionTo(
         AgenticWorkflowState.resultsReady,
         generatedTests: executedTests,
-        statusMessage:
-            'Execution complete. Passed: ${_countExecutionStatus(executedTests, TestExecutionStatus.passed)} '
-            'Failed: ${_countExecutionStatus(executedTests, TestExecutionStatus.failed)} '
-            'Skipped: ${_countExecutionStatus(executedTests, TestExecutionStatus.skipped)}',
+        statusMessage: _buildExecutionSummary(executedTests),
         clearErrorMessage: true,
       );
     } catch (e) {
       _transitionTo(
         AgenticWorkflowState.awaitingApproval,
         errorMessage: 'Failed to execute approved tests: $e',
+        clearStatusMessage: true,
+      );
+    }
+  }
+
+  Future<void> generateHealingPlans() async {
+    if (!(state.workflowState == AgenticWorkflowState.resultsReady ||
+        state.workflowState == AgenticWorkflowState.finalReport)) {
+      _updateState(
+        state.copyWith(
+          errorMessage:
+              'Healing plans can be generated only after test execution results are available.',
+        ),
+      );
+      return;
+    }
+
+    if (state.failedCount == 0) {
+      _updateState(
+        state.copyWith(
+          errorMessage: 'No failed tests found. Healing is not required.',
+        ),
+      );
+      return;
+    }
+
+    _transitionTo(
+      AgenticWorkflowState.analyzingFailures,
+      statusMessage: 'Analyzing failures and generating healing plans...',
+      clearErrorMessage: true,
+    );
+
+    try {
+      final planned = _healingPlanner.generateHealingPlans(
+        tests: state.generatedTests,
+      );
+      _transitionTo(
+        AgenticWorkflowState.awaitingHealApproval,
+        generatedTests: planned,
+        statusMessage:
+            'Generated healing plans for failed tests. Approve or reject each plan.',
+        clearErrorMessage: true,
+      );
+    } catch (e) {
+      _transitionTo(
+        AgenticWorkflowState.resultsReady,
+        errorMessage: 'Failed to generate healing plans: $e',
+        clearStatusMessage: true,
+      );
+    }
+  }
+
+  void approveHealing(String testId) {
+    _setHealingDecision(testId, TestHealingDecision.approved);
+  }
+
+  void rejectHealing(String testId) {
+    _setHealingDecision(testId, TestHealingDecision.rejected);
+  }
+
+  void approveAllHealing() {
+    if (!_requireState(AgenticWorkflowState.awaitingHealApproval)) {
+      return;
+    }
+    final updated = state.generatedTests.map((testCase) {
+      if (testCase.healingDecision == TestHealingDecision.pending) {
+        return testCase.copyWith(healingDecision: TestHealingDecision.approved);
+      }
+      return testCase;
+    }).toList();
+
+    _updateState(
+      state.copyWith(
+        generatedTests: updated,
+        statusMessage:
+            'Approved ${updated.where((t) => t.healingDecision == TestHealingDecision.approved).length} healing plans.',
+        clearErrorMessage: true,
+      ),
+    );
+  }
+
+  void rejectAllHealing() {
+    if (!_requireState(AgenticWorkflowState.awaitingHealApproval)) {
+      return;
+    }
+    final updated = state.generatedTests.map((testCase) {
+      if (testCase.healingDecision == TestHealingDecision.pending) {
+        return testCase.copyWith(healingDecision: TestHealingDecision.rejected);
+      }
+      return testCase;
+    }).toList();
+
+    _updateState(
+      state.copyWith(
+        generatedTests: updated,
+        statusMessage: 'Rejected all pending healing plans.',
+        clearErrorMessage: true,
+      ),
+    );
+  }
+
+  Future<void> reExecuteHealedTests() async {
+    if (!_requireState(AgenticWorkflowState.awaitingHealApproval)) {
+      return;
+    }
+
+    final candidates = state.generatedTests
+        .where(
+          (testCase) =>
+              testCase.healingDecision == TestHealingDecision.approved,
+        )
+        .toList();
+
+    if (candidates.isEmpty) {
+      _updateState(
+        state.copyWith(
+          errorMessage:
+              'Approve at least one healing plan before re-executing.',
+        ),
+      );
+      return;
+    }
+
+    _transitionTo(
+      AgenticWorkflowState.reExecuting,
+      statusMessage: 'Re-executing ${candidates.length} healed tests...',
+      clearErrorMessage: true,
+    );
+
+    try {
+      final healedCandidates = candidates
+          .map(
+            (testCase) => testCase.copyWith(
+              assertions: testCase.healingAssertions.isNotEmpty
+                  ? testCase.healingAssertions
+                  : testCase.assertions,
+              healingDecision: TestHealingDecision.applied,
+              healingIteration: testCase.healingIteration + 1,
+              executionStatus: TestExecutionStatus.notRun,
+              clearExecutionSummary: true,
+              assertionReport: const <String>[],
+              clearResponseStatusCode: true,
+              clearResponseTimeMs: true,
+              failureType: TestFailureType.none,
+            ),
+          )
+          .toList();
+
+      final reExecuted = await _testExecutor.executeTests(
+        tests: healedCandidates,
+        defaultHeaders: state.requestHeaders,
+        requestBody: state.requestBody,
+      );
+
+      final merged = _mergeUpdatedTests(state.generatedTests, reExecuted);
+
+      _transitionTo(
+        AgenticWorkflowState.finalReport,
+        generatedTests: merged,
+        statusMessage:
+            'Healing re-run complete. ${_buildExecutionSummary(merged)}',
+        clearErrorMessage: true,
+      );
+    } catch (e) {
+      _transitionTo(
+        AgenticWorkflowState.awaitingHealApproval,
+        errorMessage: 'Failed to re-execute healed tests: $e',
         clearStatusMessage: true,
       );
     }
@@ -232,11 +422,12 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
 
   void reset() {
     if (state.workflowState == AgenticWorkflowState.generating ||
-        state.workflowState == AgenticWorkflowState.executing) {
+        state.workflowState == AgenticWorkflowState.executing ||
+        state.workflowState == AgenticWorkflowState.analyzingFailures ||
+        state.workflowState == AgenticWorkflowState.reExecuting) {
       return;
     }
-    if (state.workflowState == AgenticWorkflowState.awaitingApproval ||
-        state.workflowState == AgenticWorkflowState.resultsReady) {
+    if (state.workflowState != AgenticWorkflowState.idle) {
       _transitionTo(
         AgenticWorkflowState.idle,
         generatedTests: const <AgenticTestCase>[],
@@ -266,6 +457,69 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
         clearErrorMessage: true,
       ),
     );
+  }
+
+  void _setHealingDecision(String testId, TestHealingDecision decision) {
+    if (!_requireState(AgenticWorkflowState.awaitingHealApproval)) {
+      return;
+    }
+    final updatedTests = state.generatedTests.map((testCase) {
+      if (testCase.id != testId) {
+        return testCase;
+      }
+      if (testCase.healingDecision != TestHealingDecision.pending &&
+          testCase.healingDecision != TestHealingDecision.approved &&
+          testCase.healingDecision != TestHealingDecision.rejected) {
+        return testCase;
+      }
+      return testCase.copyWith(healingDecision: decision);
+    }).toList();
+
+    _updateState(
+      state.copyWith(
+        generatedTests: updatedTests,
+        statusMessage:
+            'Healing decisions updated. Approved: ${updatedTests.where((t) => t.healingDecision == TestHealingDecision.approved).length}, '
+            'Rejected: ${updatedTests.where((t) => t.healingDecision == TestHealingDecision.rejected).length}',
+        clearErrorMessage: true,
+      ),
+    );
+  }
+
+  List<AgenticTestCase> _mergeUpdatedTests(
+    List<AgenticTestCase> original,
+    List<AgenticTestCase> updates,
+  ) {
+    final updatesById = {for (final item in updates) item.id: item};
+    return original.map((testCase) {
+      return updatesById[testCase.id] ?? testCase;
+    }).toList();
+  }
+
+  List<AgenticTestCase> _resetExecutionAndHealing(List<AgenticTestCase> tests) {
+    return tests
+        .map(
+          (testCase) => testCase.copyWith(
+            executionStatus: TestExecutionStatus.notRun,
+            clearExecutionSummary: true,
+            assertionReport: const <String>[],
+            clearResponseStatusCode: true,
+            clearResponseTimeMs: true,
+            failureType: TestFailureType.none,
+            clearHealingSuggestion: true,
+            healingAssertions: const <String>[],
+            healingDecision: TestHealingDecision.none,
+            healingIteration: 0,
+          ),
+        )
+        .toList();
+  }
+
+  String _buildExecutionSummary(List<AgenticTestCase> tests) {
+    final passed = _countExecutionStatus(tests, TestExecutionStatus.passed);
+    final failed = _countExecutionStatus(tests, TestExecutionStatus.failed);
+    final skipped = _countExecutionStatus(tests, TestExecutionStatus.skipped);
+    return 'Passed: $passed Failed: $failed Skipped: $skipped';
   }
 
   int _countExecutionStatus(

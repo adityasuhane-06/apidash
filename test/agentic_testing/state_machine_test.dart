@@ -44,6 +44,24 @@ class _FakeExecutor extends AgenticTestExecutor {
   }
 }
 
+class _FakeHealingPlanner extends AgenticTestHealingPlanner {
+  @override
+  List<AgenticTestCase> generateHealingPlans({
+    required List<AgenticTestCase> tests,
+  }) {
+    return tests.map((testCase) {
+      if (testCase.executionStatus != TestExecutionStatus.failed) {
+        return testCase;
+      }
+      return testCase.copyWith(
+        healingSuggestion: 'Retry with adjusted assertion',
+        healingAssertions: const <String>['status code equals 200'],
+        healingDecision: TestHealingDecision.pending,
+      );
+    }).toList();
+  }
+}
+
 class _InMemoryCheckpointStorage extends AgenticWorkflowCheckpointStorage {
   AgenticWorkflowContext? _saved;
 
@@ -65,10 +83,23 @@ class _InMemoryCheckpointStorage extends AgenticWorkflowCheckpointStorage {
 
 void main() {
   group('AgenticTestingStateMachine', () {
+    AgenticTestingStateMachine buildMachine({
+      required _FakeGenerator generator,
+      required _FakeExecutor executor,
+      _FakeHealingPlanner? planner,
+      _InMemoryCheckpointStorage? storage,
+    }) {
+      return AgenticTestingStateMachine(
+        testGenerator: generator,
+        testExecutor: executor,
+        healingPlanner: planner ?? _FakeHealingPlanner(),
+        checkpointStorage: storage ?? _InMemoryCheckpointStorage(),
+      );
+    }
+
     test('moves to awaiting approval after generation', () async {
-      final storage = _InMemoryCheckpointStorage();
-      final machine = AgenticTestingStateMachine(
-        testGenerator: _FakeGenerator([
+      final machine = buildMachine(
+        generator: _FakeGenerator([
           const AgenticTestCase(
             id: 't1',
             title: 'Status is 200',
@@ -79,11 +110,10 @@ void main() {
             assertions: ['status_code equals 200'],
           ),
         ]),
-        testExecutor: _FakeExecutor(
+        executor: _FakeExecutor(
           ({required tests, required defaultHeaders, requestBody}) async =>
               tests,
         ),
-        checkpointStorage: storage,
       );
 
       await machine.startGeneration(endpoint: 'https://api.apidash.dev/users');
@@ -97,9 +127,8 @@ void main() {
     });
 
     test('stores generation prompt in workflow context', () async {
-      final storage = _InMemoryCheckpointStorage();
-      final machine = AgenticTestingStateMachine(
-        testGenerator: _FakeGenerator([
+      final machine = buildMachine(
+        generator: _FakeGenerator([
           const AgenticTestCase(
             id: 't1',
             title: 'Status is 200',
@@ -110,11 +139,10 @@ void main() {
             assertions: ['status_code equals 200'],
           ),
         ]),
-        testExecutor: _FakeExecutor(
+        executor: _FakeExecutor(
           ({required tests, required defaultHeaders, requestBody}) async =>
               tests,
         ),
-        checkpointStorage: storage,
       );
 
       await machine.startGeneration(
@@ -129,9 +157,8 @@ void main() {
     });
 
     test('executes approved tests and moves to results ready', () async {
-      final storage = _InMemoryCheckpointStorage();
-      final machine = AgenticTestingStateMachine(
-        testGenerator: _FakeGenerator([
+      final machine = buildMachine(
+        generator: _FakeGenerator([
           const AgenticTestCase(
             id: 't1',
             title: 'Status is 200',
@@ -151,7 +178,7 @@ void main() {
             assertions: ['response body is not empty'],
           ),
         ]),
-        testExecutor: _FakeExecutor(
+        executor: _FakeExecutor(
           ({required tests, required defaultHeaders, requestBody}) async =>
               tests
                   .map(
@@ -168,7 +195,6 @@ void main() {
                   )
                   .toList(),
         ),
-        checkpointStorage: storage,
       );
 
       await machine.startGeneration(endpoint: 'https://api.apidash.dev/users');
@@ -182,9 +208,8 @@ void main() {
     });
 
     test('shows error if executing without approved tests', () async {
-      final storage = _InMemoryCheckpointStorage();
-      final machine = AgenticTestingStateMachine(
-        testGenerator: _FakeGenerator([
+      final machine = buildMachine(
+        generator: _FakeGenerator([
           const AgenticTestCase(
             id: 't1',
             title: 'Status is 200',
@@ -195,11 +220,10 @@ void main() {
             assertions: ['status_code equals 200'],
           ),
         ]),
-        testExecutor: _FakeExecutor(
+        executor: _FakeExecutor(
           ({required tests, required defaultHeaders, requestBody}) async =>
               tests,
         ),
-        checkpointStorage: storage,
       );
 
       await machine.startGeneration(endpoint: 'https://api.apidash.dev/users');
@@ -238,13 +262,13 @@ void main() {
         ),
       );
 
-      final machine = AgenticTestingStateMachine(
-        testGenerator: _FakeGenerator(const <AgenticTestCase>[]),
-        testExecutor: _FakeExecutor(
+      final machine = buildMachine(
+        generator: _FakeGenerator(const <AgenticTestCase>[]),
+        executor: _FakeExecutor(
           ({required tests, required defaultHeaders, requestBody}) async =>
               tests,
         ),
-        checkpointStorage: storage,
+        storage: storage,
       );
 
       await machine.hydrateFromCheckpoint();
@@ -257,5 +281,104 @@ void main() {
         TestExecutionStatus.passed,
       );
     });
+
+    test('generates healing plans for failed tests', () async {
+      final machine = buildMachine(
+        generator: _FakeGenerator([
+          const AgenticTestCase(
+            id: 't1',
+            title: 'Status is 200',
+            description: 'Basic success check',
+            method: 'GET',
+            endpoint: 'https://api.apidash.dev/users',
+            expectedOutcome: 'Returns success',
+            assertions: ['status_code equals 200'],
+          ),
+        ]),
+        executor: _FakeExecutor(
+          ({required tests, required defaultHeaders, requestBody}) async =>
+              tests
+                  .map(
+                    (t) => t.copyWith(
+                      executionStatus: TestExecutionStatus.failed,
+                      failureType: TestFailureType.statusCodeMismatch,
+                      responseStatusCode: 500,
+                    ),
+                  )
+                  .toList(),
+        ),
+      );
+
+      await machine.startGeneration(endpoint: 'https://api.apidash.dev/users');
+      machine.approveAll();
+      await machine.executeApprovedTests();
+      await machine.generateHealingPlans();
+
+      expect(
+        machine.state.workflowState,
+        AgenticWorkflowState.awaitingHealApproval,
+      );
+      expect(machine.state.healPendingCount, 1);
+    });
+
+    test(
+      're-executes approved healed tests and moves to final report',
+      () async {
+        var firstRun = true;
+        final machine = buildMachine(
+          generator: _FakeGenerator([
+            const AgenticTestCase(
+              id: 't1',
+              title: 'Status is 200',
+              description: 'Basic success check',
+              method: 'GET',
+              endpoint: 'https://api.apidash.dev/users',
+              expectedOutcome: 'Returns success',
+              assertions: ['status_code equals 200'],
+            ),
+          ]),
+          executor: _FakeExecutor(({
+            required tests,
+            required defaultHeaders,
+            requestBody,
+          }) async {
+            if (firstRun) {
+              firstRun = false;
+              return tests
+                  .map(
+                    (t) => t.copyWith(
+                      executionStatus: TestExecutionStatus.failed,
+                      failureType: TestFailureType.statusCodeMismatch,
+                      responseStatusCode: 500,
+                    ),
+                  )
+                  .toList();
+            }
+            return tests
+                .map(
+                  (t) => t.copyWith(
+                    executionStatus: TestExecutionStatus.passed,
+                    failureType: TestFailureType.none,
+                    responseStatusCode: 200,
+                  ),
+                )
+                .toList();
+          }),
+        );
+
+        await machine.startGeneration(
+          endpoint: 'https://api.apidash.dev/users',
+        );
+        machine.approveAll();
+        await machine.executeApprovedTests();
+        await machine.generateHealingPlans();
+        machine.approveAllHealing();
+        await machine.reExecuteHealedTests();
+
+        expect(machine.state.workflowState, AgenticWorkflowState.finalReport);
+        expect(machine.state.passedCount, 1);
+        expect(machine.state.healAppliedCount, 1);
+      },
+    );
   });
 }
