@@ -67,11 +67,13 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
     String? method,
     Map<String, String>? headers,
     String? requestBody,
+    String? generationPrompt,
   }) async {
     final normalizedEndpoint = endpoint.trim();
     final resolvedMethod = (method?.trim().isNotEmpty == true)
         ? method!.trim().toUpperCase()
         : 'GET';
+    final normalizedPrompt = generationPrompt?.trim();
 
     if (normalizedEndpoint.isEmpty) {
       _updateState(
@@ -99,6 +101,9 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
       requestMethod: resolvedMethod,
       requestHeaders: headers ?? const <String, String>{},
       requestBody: requestBody,
+      generationPrompt: normalizedPrompt?.isEmpty == true
+          ? null
+          : normalizedPrompt,
       generatedTests: const <AgenticTestCase>[],
       statusMessage: 'Generating test cases...',
       clearErrorMessage: true,
@@ -110,6 +115,7 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
         method: resolvedMethod,
         headers: headers,
         requestBody: requestBody,
+        generationPrompt: normalizedPrompt,
       );
 
       _transitionTo(
@@ -300,6 +306,8 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
     Map<String, String>? requestHeaders,
     String? requestBody,
     bool clearRequestBody = false,
+    String? generationPrompt,
+    bool clearGenerationPrompt = false,
     List<AgenticTestCase>? generatedTests,
     String? statusMessage,
     bool clearStatusMessage = false,
@@ -322,6 +330,8 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
         requestHeaders: requestHeaders,
         requestBody: requestBody,
         clearRequestBody: clearRequestBody,
+        generationPrompt: generationPrompt,
+        clearGenerationPrompt: clearGenerationPrompt,
         generatedTests: generatedTests,
         statusMessage: statusMessage,
         clearStatusMessage: clearStatusMessage,

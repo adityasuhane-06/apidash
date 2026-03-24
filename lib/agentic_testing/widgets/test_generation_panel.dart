@@ -16,6 +16,7 @@ class TestGenerationPanel extends ConsumerStatefulWidget {
 
 class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
   late final TextEditingController _endpointController;
+  late final TextEditingController _promptController;
 
   @override
   void initState() {
@@ -25,6 +26,7 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
         ?.httpRequestModel
         ?.url;
     _endpointController = TextEditingController(text: initialEndpoint ?? '');
+    _promptController = TextEditingController();
     Future.microtask(() async {
       await ref
           .read(agenticTestingStateMachineProvider.notifier)
@@ -36,12 +38,16 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
       if (restored.endpoint.trim().isNotEmpty) {
         _endpointController.text = restored.endpoint;
       }
+      if ((restored.generationPrompt ?? '').trim().isNotEmpty) {
+        _promptController.text = restored.generationPrompt!;
+      }
     });
   }
 
   @override
   void dispose() {
     _endpointController.dispose();
+    _promptController.dispose();
     super.dispose();
   }
 
@@ -67,6 +73,7 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
       method: selectedRequest?.httpRequestModel?.method.name.toUpperCase(),
       headers: selectedRequest?.httpRequestModel?.headersMap,
       requestBody: selectedRequest?.httpRequestModel?.body,
+      generationPrompt: _promptController.text.trim(),
     );
   }
 
@@ -156,6 +163,18 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
               label: const Text('Generate Tests'),
             ),
           ],
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _promptController,
+          enabled: !isBusy,
+          minLines: 2,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            labelText: 'Prompt (Optional)',
+            hintText:
+                'Example: Focus on auth failures, pagination edge cases, and response-time checks.',
+          ),
         ),
         if (isBusy) ...[
           const SizedBox(height: 12),

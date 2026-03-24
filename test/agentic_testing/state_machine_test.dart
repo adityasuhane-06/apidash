@@ -19,6 +19,7 @@ class _FakeGenerator extends AgenticTestGenerator {
     String? method,
     Map<String, String>? headers,
     String? requestBody,
+    String? generationPrompt,
   }) async {
     return output;
   }
@@ -93,6 +94,38 @@ void main() {
       );
       expect(machine.state.generatedTests, hasLength(1));
       expect(machine.state.pendingCount, 1);
+    });
+
+    test('stores generation prompt in workflow context', () async {
+      final storage = _InMemoryCheckpointStorage();
+      final machine = AgenticTestingStateMachine(
+        testGenerator: _FakeGenerator([
+          const AgenticTestCase(
+            id: 't1',
+            title: 'Status is 200',
+            description: 'Basic success check',
+            method: 'GET',
+            endpoint: 'https://api.apidash.dev/users',
+            expectedOutcome: 'Returns success',
+            assertions: ['status_code equals 200'],
+          ),
+        ]),
+        testExecutor: _FakeExecutor(
+          ({required tests, required defaultHeaders, requestBody}) async =>
+              tests,
+        ),
+        checkpointStorage: storage,
+      );
+
+      await machine.startGeneration(
+        endpoint: 'https://api.apidash.dev/users',
+        generationPrompt: 'Focus on authentication and rate limits',
+      );
+
+      expect(
+        machine.state.generationPrompt,
+        'Focus on authentication and rate limits',
+      );
     });
 
     test('executes approved tests and moves to results ready', () async {

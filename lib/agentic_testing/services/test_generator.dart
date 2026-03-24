@@ -15,6 +15,7 @@ class AgenticTestGenerator {
     String? method,
     Map<String, String>? headers,
     String? requestBody,
+    String? generationPrompt,
   }) async {
     final aiModelJson = readDefaultModel();
     if (aiModelJson == null) {
@@ -28,6 +29,9 @@ class AgenticTestGenerator {
         ? method!.trim().toUpperCase()
         : 'GET';
 
+    final normalizedPrompt = generationPrompt?.trim();
+    final hasPrompt = normalizedPrompt != null && normalizedPrompt.isNotEmpty;
+
     final response = await executeGenAIRequest(
       baseRequest.copyWith(
         systemPrompt: _buildSystemPrompt(
@@ -35,8 +39,11 @@ class AgenticTestGenerator {
           method: resolvedMethod,
           headers: headers ?? const <String, String>{},
           requestBody: requestBody,
+          generationPrompt: normalizedPrompt,
         ),
-        userPrompt: 'Generate API tests for this endpoint.',
+        userPrompt: hasPrompt
+            ? 'Generate API tests using this guidance: $normalizedPrompt'
+            : 'Generate API tests for this endpoint.',
         stream: false,
       ),
     );
@@ -141,6 +148,7 @@ class AgenticTestGenerator {
     required String method,
     required Map<String, String> headers,
     required String? requestBody,
+    required String? generationPrompt,
   }) {
     return '''
 You are an API testing assistant for API Dash.
@@ -150,6 +158,7 @@ Generate 3 to 5 focused API test cases for this endpoint:
 - Method: $method
 - Headers: ${jsonEncode(headers)}
 - Request Body: ${requestBody ?? ''}
+- Additional User Guidance: ${generationPrompt ?? 'None'}
 
 Return ONLY valid JSON in this exact shape:
 {

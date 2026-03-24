@@ -8,6 +8,7 @@ class AgenticWorkflowContext {
     this.requestMethod = 'GET',
     this.requestHeaders = const <String, String>{},
     this.requestBody,
+    this.generationPrompt,
     this.generatedTests = const <AgenticTestCase>[],
     this.statusMessage,
     this.errorMessage,
@@ -18,6 +19,7 @@ class AgenticWorkflowContext {
   final String requestMethod;
   final Map<String, String> requestHeaders;
   final String? requestBody;
+  final String? generationPrompt;
   final List<AgenticTestCase> generatedTests;
   final String? statusMessage;
   final String? errorMessage;
@@ -58,6 +60,7 @@ class AgenticWorkflowContext {
       requestMethod: (json['request_method'] as String?) ?? 'GET',
       requestHeaders: requestHeaders,
       requestBody: json['request_body'] as String?,
+      generationPrompt: json['generation_prompt'] as String?,
       generatedTests: generatedTests,
       statusMessage: json['status_message'] as String?,
       errorMessage: json['error_message'] as String?,
@@ -107,6 +110,8 @@ class AgenticWorkflowContext {
     Map<String, String>? requestHeaders,
     String? requestBody,
     bool clearRequestBody = false,
+    String? generationPrompt,
+    bool clearGenerationPrompt = false,
     List<AgenticTestCase>? generatedTests,
     String? statusMessage,
     bool clearStatusMessage = false,
@@ -119,6 +124,9 @@ class AgenticWorkflowContext {
       requestMethod: requestMethod ?? this.requestMethod,
       requestHeaders: requestHeaders ?? this.requestHeaders,
       requestBody: clearRequestBody ? null : (requestBody ?? this.requestBody),
+      generationPrompt: clearGenerationPrompt
+          ? null
+          : (generationPrompt ?? this.generationPrompt),
       generatedTests: generatedTests ?? this.generatedTests,
       statusMessage: clearStatusMessage
           ? null
@@ -136,6 +144,7 @@ class AgenticWorkflowContext {
       'request_method': requestMethod,
       'request_headers': requestHeaders,
       'request_body': requestBody,
+      'generation_prompt': generationPrompt,
       'generated_tests': generatedTests
           .map((testCase) => testCase.toJson())
           .toList(),
