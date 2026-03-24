@@ -10,7 +10,8 @@ class TestGenerationPanel extends ConsumerStatefulWidget {
   const TestGenerationPanel({super.key});
 
   @override
-  ConsumerState<TestGenerationPanel> createState() => _TestGenerationPanelState();
+  ConsumerState<TestGenerationPanel> createState() =>
+      _TestGenerationPanelState();
 }
 
 class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
@@ -19,7 +20,10 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
   @override
   void initState() {
     super.initState();
-    final initialEndpoint = ref.read(selectedRequestModelProvider)?.httpRequestModel?.url;
+    final initialEndpoint = ref
+        .read(selectedRequestModelProvider)
+        ?.httpRequestModel
+        ?.url;
     _endpointController = TextEditingController(text: initialEndpoint ?? '');
   }
 
@@ -60,12 +64,17 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
     final notifier = ref.read(agenticTestingStateMachineProvider.notifier);
     final isGenerating =
         workflow.workflowState == AgenticWorkflowState.generating;
+    final isExecuting =
+        workflow.workflowState == AgenticWorkflowState.executing;
+    final isBusy = isGenerating || isExecuting;
     final canGenerate = workflow.workflowState == AgenticWorkflowState.idle;
 
     final stateColor = switch (workflow.workflowState) {
       AgenticWorkflowState.idle => Theme.of(context).colorScheme.outline,
       AgenticWorkflowState.generating => Colors.blue,
       AgenticWorkflowState.awaitingApproval => Colors.orange,
+      AgenticWorkflowState.executing => Colors.purple,
+      AgenticWorkflowState.resultsReady => Colors.green,
     };
 
     return Column(
@@ -73,13 +82,13 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
       children: [
         Text(
           'Agentic API Testing Prototype',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 4),
         Text(
-          'State Machine: IDLE -> GENERATING -> AWAITING_APPROVAL',
+          'State Machine: IDLE -> GENERATING -> AWAITING_APPROVAL -> EXECUTING -> RESULTS_READY',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 12),
@@ -121,7 +130,7 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
             Expanded(
               child: TextField(
                 controller: _endpointController,
-                enabled: !isGenerating,
+                enabled: !isBusy,
                 decoration: const InputDecoration(
                   labelText: 'Endpoint',
                   hintText: '/users or https://api.example.com/users',
@@ -130,22 +139,28 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
             ),
             const SizedBox(width: 12),
             FilledButton.icon(
-              onPressed: isGenerating || !canGenerate ? null : _onGeneratePressed,
+              onPressed: isBusy || !canGenerate ? null : _onGeneratePressed,
               icon: const Icon(Icons.auto_awesome),
               label: const Text('Generate Tests'),
             ),
           ],
         ),
-        if (isGenerating) ...[
+        if (isBusy) ...[
           const SizedBox(height: 12),
           const LinearProgressIndicator(),
         ],
         const SizedBox(height: 12),
-        if (workflow.generatedTests.isNotEmpty)
+        if (workflow.generatedTests.isNotEmpty) ...[
           Text(
             'Approved: ${workflow.approvedCount}  Rejected: ${workflow.rejectedCount}  Pending: ${workflow.pendingCount}',
             style: Theme.of(context).textTheme.bodySmall,
           ),
+          const SizedBox(height: 4),
+          Text(
+            'Passed: ${workflow.passedCount}  Failed: ${workflow.failedCount}  Skipped: ${workflow.skippedCount}  Not Run: ${workflow.notRunCount}',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
         const SizedBox(height: 8),
         Expanded(
           child: workflow.generatedTests.isEmpty
@@ -162,11 +177,13 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
                     final testCase = workflow.generatedTests[index];
                     return TestReviewCard(
                       testCase: testCase,
-                      onApprove: workflow.workflowState ==
+                      onApprove:
+                          workflow.workflowState ==
                               AgenticWorkflowState.awaitingApproval
                           ? () => notifier.approveTest(testCase.id)
                           : null,
-                      onReject: workflow.workflowState ==
+                      onReject:
+                          workflow.workflowState ==
                               AgenticWorkflowState.awaitingApproval
                           ? () => notifier.rejectTest(testCase.id)
                           : null,
@@ -174,7 +191,8 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
                   },
                 ),
         ),
-        if (workflow.workflowState == AgenticWorkflowState.awaitingApproval) ...[
+        if (workflow.workflowState ==
+            AgenticWorkflowState.awaitingApproval) ...[
           const SizedBox(height: 10),
           Row(
             children: [
@@ -187,19 +205,26 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
               ),
               const SizedBox(width: 8),
               OutlinedButton.icon(
-                onPressed:
-                    workflow.generatedTests.isEmpty ? null : notifier.rejectAll,
+                onPressed: workflow.generatedTests.isEmpty
+                    ? null
+                    : notifier.rejectAll,
                 icon: const Icon(Icons.cancel_outlined),
                 label: const Text('Reject All'),
               ),
-              const Spacer(),
-              TextButton(
-                onPressed: notifier.reset,
-                child: const Text('Reset'),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                onPressed: workflow.approvedCount == 0
+                    ? null
+                    : () => notifier.executeApprovedTests(),
+                icon: const Icon(Icons.play_arrow_outlined),
+                label: const Text('Run Approved'),
               ),
+              const Spacer(),
+              TextButton(onPressed: notifier.reset, child: const Text('Reset')),
             ],
           ),
-        ] else if (workflow.generatedTests.isNotEmpty) ...[
+        ] else if (workflow.generatedTests.isNotEmpty &&
+            workflow.workflowState == AgenticWorkflowState.resultsReady) ...[
           const SizedBox(height: 10),
           Align(
             alignment: Alignment.centerRight,

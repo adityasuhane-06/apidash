@@ -13,6 +13,23 @@ extension TestReviewDecisionLabel on TestReviewDecision {
   }
 }
 
+enum TestExecutionStatus { notRun, passed, failed, skipped }
+
+extension TestExecutionStatusLabel on TestExecutionStatus {
+  String get label {
+    switch (this) {
+      case TestExecutionStatus.notRun:
+        return 'Not Run';
+      case TestExecutionStatus.passed:
+        return 'Passed';
+      case TestExecutionStatus.failed:
+        return 'Failed';
+      case TestExecutionStatus.skipped:
+        return 'Skipped';
+    }
+  }
+}
+
 class AgenticTestCase {
   const AgenticTestCase({
     required this.id,
@@ -24,6 +41,11 @@ class AgenticTestCase {
     required this.assertions,
     this.confidence,
     this.decision = TestReviewDecision.pending,
+    this.executionStatus = TestExecutionStatus.notRun,
+    this.executionSummary,
+    this.assertionReport = const <String>[],
+    this.responseStatusCode,
+    this.responseTimeMs,
   });
 
   final String id;
@@ -35,6 +57,11 @@ class AgenticTestCase {
   final List<String> assertions;
   final double? confidence;
   final TestReviewDecision decision;
+  final TestExecutionStatus executionStatus;
+  final String? executionSummary;
+  final List<String> assertionReport;
+  final int? responseStatusCode;
+  final int? responseTimeMs;
 
   AgenticTestCase copyWith({
     String? id,
@@ -46,6 +73,14 @@ class AgenticTestCase {
     List<String>? assertions,
     double? confidence,
     TestReviewDecision? decision,
+    TestExecutionStatus? executionStatus,
+    String? executionSummary,
+    List<String>? assertionReport,
+    int? responseStatusCode,
+    int? responseTimeMs,
+    bool clearExecutionSummary = false,
+    bool clearResponseStatusCode = false,
+    bool clearResponseTimeMs = false,
   }) {
     return AgenticTestCase(
       id: id ?? this.id,
@@ -57,6 +92,17 @@ class AgenticTestCase {
       assertions: assertions ?? this.assertions,
       confidence: confidence ?? this.confidence,
       decision: decision ?? this.decision,
+      executionStatus: executionStatus ?? this.executionStatus,
+      executionSummary: clearExecutionSummary
+          ? null
+          : (executionSummary ?? this.executionSummary),
+      assertionReport: assertionReport ?? this.assertionReport,
+      responseStatusCode: clearResponseStatusCode
+          ? null
+          : (responseStatusCode ?? this.responseStatusCode),
+      responseTimeMs: clearResponseTimeMs
+          ? null
+          : (responseTimeMs ?? this.responseTimeMs),
     );
   }
 
@@ -94,10 +140,15 @@ class AgenticTestCase {
           (json['expected_outcome'] as String?)?.trim().isNotEmpty == true
           ? (json['expected_outcome'] as String).trim()
           : (json['expectedOutcome'] as String?)?.trim().isNotEmpty == true
-              ? (json['expectedOutcome'] as String).trim()
-              : 'Request behaves as expected.',
+          ? (json['expectedOutcome'] as String).trim()
+          : 'Request behaves as expected.',
       assertions: assertions,
       confidence: _parseConfidence(json['confidence']),
+      executionStatus: _parseExecutionStatus(json['execution_status']),
+      executionSummary: (json['execution_summary'] as String?)?.trim(),
+      assertionReport: _parseStringList(json['assertion_report']),
+      responseStatusCode: _parseInt(json['response_status_code']),
+      responseTimeMs: _parseInt(json['response_time_ms']),
     );
   }
 
@@ -112,7 +163,43 @@ class AgenticTestCase {
       'assertions': assertions,
       'confidence': confidence,
       'decision': decision.name,
+      'execution_status': executionStatus.name,
+      'execution_summary': executionSummary,
+      'assertion_report': assertionReport,
+      'response_status_code': responseStatusCode,
+      'response_time_ms': responseTimeMs,
     };
+  }
+
+  static TestExecutionStatus _parseExecutionStatus(dynamic value) {
+    final raw = value?.toString().trim().toLowerCase();
+    return TestExecutionStatus.values.firstWhere(
+      (status) => status.name.toLowerCase() == raw,
+      orElse: () => TestExecutionStatus.notRun,
+    );
+  }
+
+  static List<String> _parseStringList(dynamic value) {
+    if (value is! List) {
+      return const <String>[];
+    }
+    return value
+        .map((item) => item.toString().trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+
+  static int? _parseInt(dynamic value) {
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    if (value is String) {
+      return int.tryParse(value.trim());
+    }
+    return null;
   }
 
   static double? _parseConfidence(dynamic value) {

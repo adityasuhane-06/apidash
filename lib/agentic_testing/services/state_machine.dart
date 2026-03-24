@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import '../models/test_case_model.dart';
 import '../models/workflow_context.dart';
 import '../models/workflow_state.dart';
+import 'test_executor.dart';
 import 'test_generator.dart';
 
 class InvalidWorkflowTransitionException implements Exception {
@@ -20,23 +21,31 @@ class InvalidWorkflowTransitionException implements Exception {
 class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
   AgenticTestingStateMachine({
     required AgenticTestGenerator testGenerator,
-  })  : _testGenerator = testGenerator,
-        super(const AgenticWorkflowContext());
+    required AgenticTestExecutor testExecutor,
+  }) : _testGenerator = testGenerator,
+       _testExecutor = testExecutor,
+       super(const AgenticWorkflowContext());
 
   final AgenticTestGenerator _testGenerator;
+  final AgenticTestExecutor _testExecutor;
 
   static const Map<AgenticWorkflowState, Set<AgenticWorkflowState>>
-      _allowedTransitions = {
-    AgenticWorkflowState.idle: {
-      AgenticWorkflowState.generating,
-    },
+  _allowedTransitions = {
+    AgenticWorkflowState.idle: {AgenticWorkflowState.generating},
     AgenticWorkflowState.generating: {
       AgenticWorkflowState.awaitingApproval,
       AgenticWorkflowState.idle,
     },
     AgenticWorkflowState.awaitingApproval: {
+      AgenticWorkflowState.executing,
       AgenticWorkflowState.idle,
     },
+    AgenticWorkflowState.executing: {
+      AgenticWorkflowState.resultsReady,
+      AgenticWorkflowState.awaitingApproval,
+      AgenticWorkflowState.idle,
+    },
+    AgenticWorkflowState.resultsReady: {AgenticWorkflowState.idle},
   };
 
   Future<void> startGeneration({
@@ -46,6 +55,10 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
     String? requestBody,
   }) async {
     final normalizedEndpoint = endpoint.trim();
+    final resolvedMethod = (method?.trim().isNotEmpty == true)
+        ? method!.trim().toUpperCase()
+        : 'GET';
+
     if (normalizedEndpoint.isEmpty) {
       state = state.copyWith(
         errorMessage: 'Please provide an endpoint before generating tests.',
@@ -65,6 +78,9 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
     _transitionTo(
       AgenticWorkflowState.generating,
       endpoint: normalizedEndpoint,
+      requestMethod: resolvedMethod,
+      requestHeaders: headers ?? const <String, String>{},
+      requestBody: requestBody,
       generatedTests: const <AgenticTestCase>[],
       statusMessage: 'Generating test cases...',
       clearErrorMessage: true,
@@ -73,7 +89,7 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
     try {
       final tests = await _testGenerator.generateTests(
         endpoint: normalizedEndpoint,
-        method: method,
+        method: resolvedMethod,
         headers: headers,
         requestBody: requestBody,
       );
@@ -82,7 +98,7 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
         AgenticWorkflowState.awaitingApproval,
         generatedTests: tests,
         statusMessage:
-            'Generated ${tests.length} test cases. Review and approve/reject.',
+            'Generated ${tests.length} test cases. Review and approve before execution.',
         clearErrorMessage: true,
       );
     } catch (e) {
@@ -90,6 +106,49 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
         AgenticWorkflowState.idle,
         generatedTests: const <AgenticTestCase>[],
         errorMessage: 'Failed to generate tests: $e',
+        clearStatusMessage: true,
+      );
+    }
+  }
+
+  Future<void> executeApprovedTests() async {
+    if (!_requireState(AgenticWorkflowState.awaitingApproval)) {
+      return;
+    }
+
+    if (state.approvedCount == 0) {
+      state = state.copyWith(
+        errorMessage: 'Approve at least one test case before execution.',
+      );
+      return;
+    }
+
+    _transitionTo(
+      AgenticWorkflowState.executing,
+      statusMessage: 'Executing ${state.approvedCount} approved test cases...',
+      clearErrorMessage: true,
+    );
+
+    try {
+      final executedTests = await _testExecutor.executeTests(
+        tests: state.generatedTests,
+        defaultHeaders: state.requestHeaders,
+        requestBody: state.requestBody,
+      );
+
+      _transitionTo(
+        AgenticWorkflowState.resultsReady,
+        generatedTests: executedTests,
+        statusMessage:
+            'Execution complete. Passed: ${_countExecutionStatus(executedTests, TestExecutionStatus.passed)} '
+            'Failed: ${_countExecutionStatus(executedTests, TestExecutionStatus.failed)} '
+            'Skipped: ${_countExecutionStatus(executedTests, TestExecutionStatus.skipped)}',
+        clearErrorMessage: true,
+      );
+    } catch (e) {
+      _transitionTo(
+        AgenticWorkflowState.awaitingApproval,
+        errorMessage: 'Failed to execute approved tests: $e',
         clearStatusMessage: true,
       );
     }
@@ -113,9 +172,12 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
               testCase.copyWith(decision: TestReviewDecision.approved),
         )
         .toList();
-    _completeReview(
-      reviewedTests,
-      statusMessage: 'Approved ${reviewedTests.length} test cases.',
+
+    state = state.copyWith(
+      generatedTests: reviewedTests,
+      statusMessage:
+          'Approved ${reviewedTests.length} test cases. Run approved tests to execute.',
+      clearErrorMessage: true,
     );
   }
 
@@ -129,38 +191,31 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
               testCase.copyWith(decision: TestReviewDecision.rejected),
         )
         .toList();
-    _completeReview(
-      reviewedTests,
-      statusMessage: 'Rejected ${reviewedTests.length} test cases.',
+
+    state = state.copyWith(
+      generatedTests: reviewedTests,
+      statusMessage:
+          'Rejected ${reviewedTests.length} test cases. You can reset or re-generate.',
+      clearErrorMessage: true,
     );
   }
 
   void reset() {
-    if (state.workflowState == AgenticWorkflowState.generating) {
+    if (state.workflowState == AgenticWorkflowState.generating ||
+        state.workflowState == AgenticWorkflowState.executing) {
       return;
     }
-    if (state.workflowState == AgenticWorkflowState.awaitingApproval) {
+    if (state.workflowState == AgenticWorkflowState.awaitingApproval ||
+        state.workflowState == AgenticWorkflowState.resultsReady) {
       _transitionTo(
         AgenticWorkflowState.idle,
         generatedTests: const <AgenticTestCase>[],
-        statusMessage: 'Review reset. Ready to generate again.',
+        statusMessage: 'Workflow reset. Ready to generate again.',
         clearErrorMessage: true,
       );
       return;
     }
     state = const AgenticWorkflowContext();
-  }
-
-  void _completeReview(
-    List<AgenticTestCase> reviewedTests, {
-    required String statusMessage,
-  }) {
-    _transitionTo(
-      AgenticWorkflowState.idle,
-      generatedTests: reviewedTests,
-      statusMessage: statusMessage,
-      clearErrorMessage: true,
-    );
   }
 
   void _setDecision(String testId, TestReviewDecision decision) {
@@ -179,6 +234,13 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
           'Reviewed ${updatedTests.length - _pendingCount(updatedTests)} of ${updatedTests.length} tests.',
       clearErrorMessage: true,
     );
+  }
+
+  int _countExecutionStatus(
+    List<AgenticTestCase> tests,
+    TestExecutionStatus status,
+  ) {
+    return tests.where((testCase) => testCase.executionStatus == status).length;
   }
 
   int _pendingCount(List<AgenticTestCase> tests) {
@@ -201,6 +263,10 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
   void _transitionTo(
     AgenticWorkflowState nextState, {
     String? endpoint,
+    String? requestMethod,
+    Map<String, String>? requestHeaders,
+    String? requestBody,
+    bool clearRequestBody = false,
     List<AgenticTestCase>? generatedTests,
     String? statusMessage,
     bool clearStatusMessage = false,
@@ -218,6 +284,10 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
     state = state.copyWith(
       workflowState: nextState,
       endpoint: endpoint,
+      requestMethod: requestMethod,
+      requestHeaders: requestHeaders,
+      requestBody: requestBody,
+      clearRequestBody: clearRequestBody,
       generatedTests: generatedTests,
       statusMessage: statusMessage,
       clearStatusMessage: clearStatusMessage,

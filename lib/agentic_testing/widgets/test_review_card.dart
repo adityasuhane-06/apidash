@@ -22,6 +22,12 @@ class TestReviewCard extends StatelessWidget {
       TestReviewDecision.approved => Colors.green,
       TestReviewDecision.rejected => Colors.red,
     };
+    final executionColor = switch (testCase.executionStatus) {
+      TestExecutionStatus.notRun => colorScheme.outline,
+      TestExecutionStatus.passed => Colors.green,
+      TestExecutionStatus.failed => Colors.red,
+      TestExecutionStatus.skipped => Colors.orange,
+    };
 
     return Card(
       child: Padding(
@@ -35,8 +41,8 @@ class TestReviewCard extends StatelessWidget {
                   child: Text(
                     testCase.title,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
                 if (testCase.confidence != null)
@@ -66,6 +72,11 @@ class TestReviewCard extends StatelessWidget {
                   side: BorderSide(color: decisionColor),
                   label: Text(testCase.decision.label),
                 ),
+                Chip(
+                  visualDensity: VisualDensity.compact,
+                  side: BorderSide(color: executionColor),
+                  label: Text(testCase.executionStatus.label),
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -73,18 +84,18 @@ class TestReviewCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Expected Outcome',
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
             ),
             Text(testCase.expectedOutcome),
             if (testCase.assertions.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
                 'Assertions',
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 4),
               ...testCase.assertions.map(
@@ -93,6 +104,30 @@ class TestReviewCard extends StatelessWidget {
                   child: Text('- $assertion'),
                 ),
               ),
+            ],
+            if (testCase.executionSummary != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Execution',
+                style: Theme.of(
+                  context,
+                ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 4),
+              Text(testCase.executionSummary!),
+              if (testCase.responseStatusCode != null)
+                Text('Response Status: ${testCase.responseStatusCode}'),
+              if (testCase.responseTimeMs != null)
+                Text('Response Time: ${testCase.responseTimeMs} ms'),
+              if (testCase.assertionReport.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                ...testCase.assertionReport.map(
+                  (line) => Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Text('- $line'),
+                  ),
+                ),
+              ],
             ],
             const SizedBox(height: 10),
             Row(
@@ -117,4 +152,3 @@ class TestReviewCard extends StatelessWidget {
     );
   }
 }
-

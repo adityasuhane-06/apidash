@@ -1,4 +1,10 @@
-enum AgenticWorkflowState { idle, generating, awaitingApproval }
+enum AgenticWorkflowState {
+  idle,
+  generating,
+  awaitingApproval,
+  executing,
+  resultsReady,
+}
 
 extension AgenticWorkflowStateLabel on AgenticWorkflowState {
   String get label {
@@ -9,6 +15,10 @@ extension AgenticWorkflowStateLabel on AgenticWorkflowState {
         return 'GENERATING';
       case AgenticWorkflowState.awaitingApproval:
         return 'AWAITING_APPROVAL';
+      case AgenticWorkflowState.executing:
+        return 'EXECUTING';
+      case AgenticWorkflowState.resultsReady:
+        return 'RESULTS_READY';
     }
   }
 }

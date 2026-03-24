@@ -6,9 +6,7 @@ import 'package:apidash_core/apidash_core.dart';
 import '../models/test_case_model.dart';
 
 class AgenticTestGenerator {
-  AgenticTestGenerator({
-    required this.readDefaultModel,
-  });
+  AgenticTestGenerator({required this.readDefaultModel});
 
   final Map<String, dynamic>? Function() readDefaultModel;
 
@@ -44,7 +42,7 @@ class AgenticTestGenerator {
     );
 
     if (response == null || response.trim().isEmpty) {
-      throw Exception('LLM returned an empty response.');
+      return _buildFallbackTests(endpoint: endpoint, method: resolvedMethod);
     }
 
     final parsed = _parseResponse(
@@ -56,10 +54,7 @@ class AgenticTestGenerator {
       return parsed;
     }
 
-    return _buildFallbackTests(
-      endpoint: endpoint,
-      method: resolvedMethod,
-    );
+    return _buildFallbackTests(endpoint: endpoint, method: resolvedMethod);
   }
 
   List<AgenticTestCase> _parseResponse(
@@ -69,19 +64,13 @@ class AgenticTestGenerator {
   }) {
     final decoded = _tryDecodeJson(rawResponse);
     if (decoded == null) {
-      return _buildFallbackTests(
-        endpoint: endpoint,
-        method: method,
-      );
+      return _buildFallbackTests(endpoint: endpoint, method: method);
     }
 
     final rawTests =
         decoded['tests'] ?? decoded['test_cases'] ?? decoded['cases'];
     if (rawTests is! List || rawTests.isEmpty) {
-      return _buildFallbackTests(
-        endpoint: endpoint,
-        method: method,
-      );
+      return _buildFallbackTests(endpoint: endpoint, method: method);
     }
 
     final generated = <AgenticTestCase>[];
@@ -100,10 +89,7 @@ class AgenticTestGenerator {
     }
 
     if (generated.isEmpty) {
-      return _buildFallbackTests(
-        endpoint: endpoint,
-        method: method,
-      );
+      return _buildFallbackTests(endpoint: endpoint, method: method);
     }
     return generated;
   }

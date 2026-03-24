@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/legacy.dart';
 
 import '../models/workflow_context.dart';
 import '../services/state_machine.dart';
+import '../services/test_executor.dart';
 import '../services/test_generator.dart';
 
 final agenticTestGeneratorProvider = Provider<AgenticTestGenerator>((ref) {
@@ -12,11 +13,16 @@ final agenticTestGeneratorProvider = Provider<AgenticTestGenerator>((ref) {
   );
 });
 
+final agenticTestExecutorProvider = Provider<AgenticTestExecutor>((ref) {
+  return const AgenticTestExecutor();
+});
+
 final agenticTestingStateMachineProvider =
-    StateNotifierProvider<AgenticTestingStateMachine, AgenticWorkflowContext>(
-  (ref) {
-    return AgenticTestingStateMachine(
-      testGenerator: ref.read(agenticTestGeneratorProvider),
-    );
-  },
-);
+    StateNotifierProvider<AgenticTestingStateMachine, AgenticWorkflowContext>((
+      ref,
+    ) {
+      return AgenticTestingStateMachine(
+        testGenerator: ref.read(agenticTestGeneratorProvider),
+        testExecutor: ref.read(agenticTestExecutorProvider),
+      );
+    });
