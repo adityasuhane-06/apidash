@@ -54,7 +54,7 @@ class _FakeHealingPlanner extends AgenticTestHealingPlanner {
         return testCase;
       }
       return testCase.copyWith(
-        healingSuggestion: 'Retry with adjusted assertion',
+        healingSuggestion: 'Retry after fixes; keep assertions unchanged',
         healingAssertions: const <String>['status code equals 200'],
         healingDecision: TestHealingDecision.pending,
       );
@@ -322,9 +322,10 @@ void main() {
     });
 
     test(
-      're-executes approved healed tests and moves to final report',
+      're-executes approved healed tests without mutating assertions',
       () async {
         var firstRun = true;
+        List<AgenticTestCase>? secondRunInput;
         final machine = buildMachine(
           generator: _FakeGenerator([
             const AgenticTestCase(
@@ -354,6 +355,7 @@ void main() {
                   )
                   .toList();
             }
+            secondRunInput = tests;
             return tests
                 .map(
                   (t) => t.copyWith(
@@ -378,6 +380,12 @@ void main() {
         expect(machine.state.workflowState, AgenticWorkflowState.finalReport);
         expect(machine.state.passedCount, 1);
         expect(machine.state.healAppliedCount, 1);
+        expect(secondRunInput, isNotNull);
+        expect(secondRunInput!.single.assertions, ['status_code equals 200']);
+        expect(
+          secondRunInput!.single.assertions,
+          isNot(equals(secondRunInput!.single.healingAssertions)),
+        );
       },
     );
   });

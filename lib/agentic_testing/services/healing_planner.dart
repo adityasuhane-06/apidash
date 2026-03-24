@@ -30,100 +30,59 @@ class AgenticTestHealingPlanner {
     switch (testCase.failureType) {
       case TestFailureType.networkError:
         return (
-          'Transient network failure detected. Retry this test once with the same assertions.',
-          testCase.assertions,
+          'Network/connectivity failure detected. Fix environment or request setup, then re-run with the same assertion contract.',
+          const <String>[
+            'Verify endpoint reachability, DNS, and TLS/certificate setup.',
+            'Check required auth headers/tokens and proxy configuration.',
+            'Re-run after connectivity/setup fixes (without changing assertions).',
+          ],
         );
       case TestFailureType.statusCodeMismatch:
-        final code = testCase.responseStatusCode;
-        final statusAssertion = code == null
-            ? 'status code is in 2xx range'
-            : 'status code equals $code';
         return (
-          'Update status assertion to align with observed response and re-run for confirmation.',
-          _replaceStatusAssertions(testCase.assertions, statusAssertion),
+          'Status-code mismatch detected. Treat observed status as signal for diagnosis, not as a new expected contract.',
+          const <String>[
+            'Verify request method, path, query, and authentication context.',
+            'Check backend logs/error payload for root cause of unexpected status.',
+            'If API contract intentionally changed, manually update test assertions after review.',
+          ],
         );
       case TestFailureType.bodyValidationFailed:
         return (
-          'Body shape mismatch detected. Use JSON/body assertions that match the observed payload.',
-          _replaceBodyAssertions(testCase.assertions, const <String>[
-            'response body is json',
-            'response body is not empty',
-          ]),
+          'Response body validation failed. Investigate payload contract or data readiness, then re-run unchanged tests.',
+          const <String>[
+            'Compare response payload with API schema/OpenAPI contract.',
+            'Check test data fixtures/seeding and serialization behavior.',
+            'Only change assertions manually if contract change is deliberate.',
+          ],
         );
       case TestFailureType.responseTimeExceeded:
-        final newThreshold = _getRelaxedThreshold(testCase);
         return (
-          'Response time threshold appears too strict for current environment. Retry with a relaxed limit.',
-          _replaceTimeAssertions(
-            testCase.assertions,
-            'response time less than ${newThreshold}ms',
-          ),
+          'Response-time threshold exceeded. Investigate performance bottlenecks; do not auto-relax SLO assertions.',
+          <String>[
+            'Measured latency: ${testCase.responseTimeMs ?? 'unknown'} ms.',
+            'Check server/resource load and cold-start effects.',
+            'Adjust latency threshold manually only with explicit product/SRE agreement.',
+          ],
         );
       case TestFailureType.unsupportedAssertion:
-        final statusCode = testCase.responseStatusCode ?? 200;
         return (
-          'Assertion could not be auto-verified. Replace with baseline, executable assertions.',
-          <String>['status code equals $statusCode', 'response body is json'],
+          'Some assertions are not machine-verifiable yet. Add explicit executor support instead of rewriting expectations.',
+          const <String>[
+            'Map unsupported assertion syntax to executable checks in executor.',
+            'Preserve original assertion intent while implementing parser/evaluator support.',
+            'Re-run once assertion-engine support is added.',
+          ],
         );
       case TestFailureType.unknown:
       case TestFailureType.none:
         return (
-          'Failure reason is ambiguous. Retry with baseline checks to gather clearer diagnostics.',
-          <String>['status code is in 2xx range', 'response body is not empty'],
+          'Failure reason is ambiguous. Collect more diagnostics and re-run with the same assertions.',
+          const <String>[
+            'Capture response body, headers, and server logs for this request.',
+            'Verify environment parity (base URL, auth, data state).',
+            'Re-run after diagnostics-driven fixes.',
+          ],
         );
     }
-  }
-
-  List<String> _replaceStatusAssertions(
-    List<String> original,
-    String statusAssertion,
-  ) {
-    final nonStatus = original
-        .where((item) => !_isStatusAssertion(item.toLowerCase()))
-        .toList();
-    return <String>[statusAssertion, ...nonStatus];
-  }
-
-  List<String> _replaceBodyAssertions(
-    List<String> original,
-    List<String> replacement,
-  ) {
-    final nonBody = original
-        .where((item) => !_isBodyAssertion(item.toLowerCase()))
-        .toList();
-    return <String>[...replacement, ...nonBody];
-  }
-
-  List<String> _replaceTimeAssertions(
-    List<String> original,
-    String replacement,
-  ) {
-    final nonTime = original
-        .where((item) => !_isTimeAssertion(item.toLowerCase()))
-        .toList();
-    return <String>[replacement, ...nonTime];
-  }
-
-  bool _isStatusAssertion(String normalized) {
-    return normalized.contains('status') || normalized.contains('status_code');
-  }
-
-  bool _isBodyAssertion(String normalized) {
-    return normalized.contains('body') ||
-        normalized.contains('json') ||
-        normalized.contains('array') ||
-        normalized.contains('object');
-  }
-
-  bool _isTimeAssertion(String normalized) {
-    return normalized.contains('response time') ||
-        normalized.contains('latency') ||
-        normalized.contains('ms');
-  }
-
-  int _getRelaxedThreshold(AgenticTestCase testCase) {
-    final measured = testCase.responseTimeMs ?? 1000;
-    final relaxed = (measured * 1.25).round();
-    return relaxed < 300 ? 300 : relaxed;
   }
 }

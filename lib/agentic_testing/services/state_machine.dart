@@ -226,7 +226,8 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
 
     _transitionTo(
       AgenticWorkflowState.analyzingFailures,
-      statusMessage: 'Analyzing failures and generating healing plans...',
+      statusMessage:
+          'Analyzing failures and generating healing recommendations...',
       clearErrorMessage: true,
     );
 
@@ -238,7 +239,7 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
         AgenticWorkflowState.awaitingHealApproval,
         generatedTests: planned,
         statusMessage:
-            'Generated healing plans for failed tests. Approve or reject each plan.',
+            'Generated healing recommendations for failed tests. Original assertions stay unchanged unless manually edited.',
         clearErrorMessage: true,
       );
     } catch (e) {
@@ -323,7 +324,8 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
 
     _transitionTo(
       AgenticWorkflowState.reExecuting,
-      statusMessage: 'Re-executing ${candidates.length} healed tests...',
+      statusMessage:
+          'Re-executing ${candidates.length} healed tests with original assertions...',
       clearErrorMessage: true,
     );
 
@@ -331,9 +333,8 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
       final healedCandidates = candidates
           .map(
             (testCase) => testCase.copyWith(
-              assertions: testCase.healingAssertions.isNotEmpty
-                  ? testCase.healingAssertions
-                  : testCase.assertions,
+              // Keep assertion contracts immutable in prototype strict mode.
+              // Healing approval only permits a re-run after manual/environment fixes.
               healingDecision: TestHealingDecision.applied,
               healingIteration: testCase.healingIteration + 1,
               executionStatus: TestExecutionStatus.notRun,
@@ -358,7 +359,7 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
         AgenticWorkflowState.finalReport,
         generatedTests: merged,
         statusMessage:
-            'Healing re-run complete. ${_buildExecutionSummary(merged)}',
+            'Healing re-run complete (assertions unchanged). ${_buildExecutionSummary(merged)}',
         clearErrorMessage: true,
       );
     } catch (e) {

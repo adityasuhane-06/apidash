@@ -164,7 +164,7 @@ class TestReviewCard extends StatelessWidget {
             if ((testCase.healingSuggestion ?? '').trim().isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
-                'Healing Plan',
+                'Healing Recommendation',
                 style: Theme.of(
                   context,
                 ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
@@ -173,6 +173,11 @@ class TestReviewCard extends StatelessWidget {
               Text(testCase.healingSuggestion!),
               if (testCase.healingAssertions.isNotEmpty) ...[
                 const SizedBox(height: 4),
+                Text(
+                  'Manual checks (assertions are not auto-edited):',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 2),
                 ...testCase.healingAssertions.map(
                   (line) => Padding(
                     padding: const EdgeInsets.only(bottom: 2),

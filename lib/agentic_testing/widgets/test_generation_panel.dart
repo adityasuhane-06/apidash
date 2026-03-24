@@ -119,6 +119,11 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
           'State Machine: IDLE -> GENERATING -> AWAITING_APPROVAL -> EXECUTING -> RESULTS_READY -> ANALYZING_FAILURES -> AWAITING_HEAL_APPROVAL -> RE_EXECUTING -> FINAL_REPORT',
           style: Theme.of(context).textTheme.bodySmall,
         ),
+        const SizedBox(height: 4),
+        Text(
+          'Strict mode: approved healing re-runs tests without auto-changing assertions.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
         const SizedBox(height: 12),
         Row(
           children: [
@@ -292,7 +297,7 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
                     ? null
                     : () => notifier.generateHealingPlans(),
                 icon: const Icon(Icons.healing_outlined),
-                label: const Text('Generate Healing Plans'),
+                label: const Text('Analyze Failed Tests'),
               ),
               const Spacer(),
               TextButton(
@@ -327,7 +332,7 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
                     ? null
                     : () => notifier.reExecuteHealedTests(),
                 icon: const Icon(Icons.play_arrow_outlined),
-                label: const Text('Apply & Re-run'),
+                label: const Text('Re-run (Keep Assertions)'),
               ),
               const Spacer(),
               TextButton(onPressed: notifier.reset, child: const Text('Reset')),
