@@ -30,6 +30,56 @@ extension TestExecutionStatusLabel on TestExecutionStatus {
   }
 }
 
+enum TestFailureType {
+  none,
+  networkError,
+  statusCodeMismatch,
+  bodyValidationFailed,
+  responseTimeExceeded,
+  unsupportedAssertion,
+  unknown,
+}
+
+extension TestFailureTypeLabel on TestFailureType {
+  String get label {
+    switch (this) {
+      case TestFailureType.none:
+        return 'None';
+      case TestFailureType.networkError:
+        return 'Network Error';
+      case TestFailureType.statusCodeMismatch:
+        return 'Status Code Mismatch';
+      case TestFailureType.bodyValidationFailed:
+        return 'Body Validation Failed';
+      case TestFailureType.responseTimeExceeded:
+        return 'Response Time Exceeded';
+      case TestFailureType.unsupportedAssertion:
+        return 'Unsupported Assertion';
+      case TestFailureType.unknown:
+        return 'Unknown';
+    }
+  }
+
+  String get code {
+    switch (this) {
+      case TestFailureType.none:
+        return 'none';
+      case TestFailureType.networkError:
+        return 'network_error';
+      case TestFailureType.statusCodeMismatch:
+        return 'status_code_mismatch';
+      case TestFailureType.bodyValidationFailed:
+        return 'body_validation_failed';
+      case TestFailureType.responseTimeExceeded:
+        return 'response_time_exceeded';
+      case TestFailureType.unsupportedAssertion:
+        return 'unsupported_assertion';
+      case TestFailureType.unknown:
+        return 'unknown';
+    }
+  }
+}
+
 class AgenticTestCase {
   const AgenticTestCase({
     required this.id,
@@ -46,6 +96,7 @@ class AgenticTestCase {
     this.assertionReport = const <String>[],
     this.responseStatusCode,
     this.responseTimeMs,
+    this.failureType = TestFailureType.none,
   });
 
   final String id;
@@ -62,6 +113,7 @@ class AgenticTestCase {
   final List<String> assertionReport;
   final int? responseStatusCode;
   final int? responseTimeMs;
+  final TestFailureType failureType;
 
   AgenticTestCase copyWith({
     String? id,
@@ -78,6 +130,7 @@ class AgenticTestCase {
     List<String>? assertionReport,
     int? responseStatusCode,
     int? responseTimeMs,
+    TestFailureType? failureType,
     bool clearExecutionSummary = false,
     bool clearResponseStatusCode = false,
     bool clearResponseTimeMs = false,
@@ -103,6 +156,7 @@ class AgenticTestCase {
       responseTimeMs: clearResponseTimeMs
           ? null
           : (responseTimeMs ?? this.responseTimeMs),
+      failureType: failureType ?? this.failureType,
     );
   }
 
@@ -149,6 +203,7 @@ class AgenticTestCase {
       assertionReport: _parseStringList(json['assertion_report']),
       responseStatusCode: _parseInt(json['response_status_code']),
       responseTimeMs: _parseInt(json['response_time_ms']),
+      failureType: _parseFailureType(json['failure_type']),
     );
   }
 
@@ -168,6 +223,7 @@ class AgenticTestCase {
       'assertion_report': assertionReport,
       'response_status_code': responseStatusCode,
       'response_time_ms': responseTimeMs,
+      'failure_type': failureType.code,
     };
   }
 
@@ -177,6 +233,20 @@ class AgenticTestCase {
       (status) => status.name.toLowerCase() == raw,
       orElse: () => TestExecutionStatus.notRun,
     );
+  }
+
+  static TestFailureType _parseFailureType(dynamic value) {
+    final raw = value?.toString().trim().toLowerCase();
+    return switch (raw) {
+      'none' => TestFailureType.none,
+      'network_error' => TestFailureType.networkError,
+      'status_code_mismatch' => TestFailureType.statusCodeMismatch,
+      'body_validation_failed' => TestFailureType.bodyValidationFailed,
+      'response_time_exceeded' => TestFailureType.responseTimeExceeded,
+      'unsupported_assertion' => TestFailureType.unsupportedAssertion,
+      'unknown' => TestFailureType.unknown,
+      _ => TestFailureType.none,
+    };
   }
 
   static List<String> _parseStringList(dynamic value) {

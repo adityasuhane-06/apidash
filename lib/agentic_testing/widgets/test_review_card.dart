@@ -28,6 +28,10 @@ class TestReviewCard extends StatelessWidget {
       TestExecutionStatus.failed => Colors.red,
       TestExecutionStatus.skipped => Colors.orange,
     };
+    final shouldShowFailureType =
+        testCase.failureType != TestFailureType.none &&
+        (testCase.executionStatus == TestExecutionStatus.failed ||
+            testCase.executionStatus == TestExecutionStatus.skipped);
 
     return Card(
       child: Padding(
@@ -77,6 +81,12 @@ class TestReviewCard extends StatelessWidget {
                   side: BorderSide(color: executionColor),
                   label: Text(testCase.executionStatus.label),
                 ),
+                if (shouldShowFailureType)
+                  Chip(
+                    visualDensity: VisualDensity.compact,
+                    side: const BorderSide(color: Colors.redAccent),
+                    label: Text(testCase.failureType.code),
+                  ),
               ],
             ),
             const SizedBox(height: 8),
@@ -115,6 +125,8 @@ class TestReviewCard extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(testCase.executionSummary!),
+              if (shouldShowFailureType)
+                Text('Failure Type: ${testCase.failureType.label}'),
               if (testCase.responseStatusCode != null)
                 Text('Response Status: ${testCase.responseStatusCode}'),
               if (testCase.responseTimeMs != null)

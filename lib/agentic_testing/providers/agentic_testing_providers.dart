@@ -15,7 +15,7 @@ final agenticTestGeneratorProvider = Provider<AgenticTestGenerator>((ref) {
 });
 
 final agenticTestExecutorProvider = Provider<AgenticTestExecutor>((ref) {
-  return const AgenticTestExecutor();
+  return AgenticTestExecutor();
 });
 
 final agenticWorkflowCheckpointStorageProvider =

@@ -4,17 +4,32 @@ import 'package:apidash_core/apidash_core.dart';
 
 import '../models/test_case_model.dart';
 
+typedef AgenticExecuteHttpRequest =
+    Future<(Response?, Duration?, String?)> Function(
+      String requestId,
+      APIType apiType,
+      HttpRequestModel requestModel,
+    );
+
 enum _AssertionResultType { passed, failed, skipped }
 
 class _AssertionEvaluation {
-  const _AssertionEvaluation({required this.type, required this.message});
+  const _AssertionEvaluation({
+    required this.type,
+    required this.message,
+    this.failureType = TestFailureType.none,
+  });
 
   final _AssertionResultType type;
   final String message;
+  final TestFailureType failureType;
 }
 
 class AgenticTestExecutor {
-  const AgenticTestExecutor();
+  AgenticTestExecutor({AgenticExecuteHttpRequest? executeHttpRequest})
+    : _executeHttpRequest = executeHttpRequest ?? sendHttpRequest;
+
+  final AgenticExecuteHttpRequest _executeHttpRequest;
 
   Future<List<AgenticTestCase>> executeTests({
     required List<AgenticTestCase> tests,
@@ -22,6 +37,7 @@ class AgenticTestExecutor {
     String? requestBody,
   }) async {
     final executed = <AgenticTestCase>[];
+
     for (final testCase in tests) {
       if (testCase.decision != TestReviewDecision.approved) {
         executed.add(
@@ -31,6 +47,7 @@ class AgenticTestExecutor {
             assertionReport: const <String>[],
             clearResponseStatusCode: true,
             clearResponseTimeMs: true,
+            failureType: TestFailureType.none,
           ),
         );
         continue;
@@ -43,21 +60,22 @@ class AgenticTestExecutor {
       );
 
       final requestId = 'agentic_test_${DateTime.now().microsecondsSinceEpoch}';
-      final (response, duration, errorMessage) = await sendHttpRequest(
+      final (response, duration, errorMessage) = await _executeHttpRequest(
         requestId,
         APIType.rest,
         requestModel,
       );
 
       if (response == null) {
+        final failureMsg = errorMessage ?? 'Unknown network error';
         executed.add(
           testCase.copyWith(
             executionStatus: TestExecutionStatus.failed,
-            executionSummary:
-                'Execution failed: ${errorMessage ?? 'Unknown network error'}',
-            assertionReport: const <String>[],
+            executionSummary: 'Execution failed: $failureMsg',
+            assertionReport: <String>['FAIL: request failed ($failureMsg)'],
             clearResponseStatusCode: true,
             clearResponseTimeMs: true,
+            failureType: TestFailureType.networkError,
           ),
         );
         continue;
@@ -72,21 +90,18 @@ class AgenticTestExecutor {
 
       final passed = evaluations
           .where((item) => item.type == _AssertionResultType.passed)
-          .map((item) => item.message)
           .toList();
       final failed = evaluations
           .where((item) => item.type == _AssertionResultType.failed)
-          .map((item) => item.message)
           .toList();
       final skipped = evaluations
           .where((item) => item.type == _AssertionResultType.skipped)
-          .map((item) => item.message)
           .toList();
 
       final report = <String>[
-        ...passed.map((line) => 'PASS: $line'),
-        ...failed.map((line) => 'FAIL: $line'),
-        ...skipped.map((line) => 'SKIP: $line'),
+        ...passed.map((item) => 'PASS: ${item.message}'),
+        ...failed.map((item) => 'FAIL: ${item.message}'),
+        ...skipped.map((item) => 'SKIP: ${item.message}'),
       ];
 
       final status = failed.isNotEmpty
@@ -95,11 +110,18 @@ class AgenticTestExecutor {
           ? TestExecutionStatus.passed
           : TestExecutionStatus.skipped;
 
-      final summary = status == TestExecutionStatus.failed
-          ? 'Failed ${failed.length}/${evaluations.length} checks.'
-          : status == TestExecutionStatus.passed
-          ? 'Passed ${passed.length}/${evaluations.length} checks.'
-          : 'No auto-verifiable checks for this test yet.';
+      final failureType = _resolveFailureType(failed, skipped);
+      final summary = switch (status) {
+        TestExecutionStatus.failed =>
+          'Failed ${failed.length}/${evaluations.length} checks (${failureType.code}).',
+        TestExecutionStatus.passed =>
+          'Passed ${passed.length}/${evaluations.length} checks.',
+        TestExecutionStatus.skipped =>
+          failureType == TestFailureType.unsupportedAssertion
+              ? 'No auto-verifiable checks (${failureType.code}).'
+              : 'No auto-verifiable checks for this test yet.',
+        TestExecutionStatus.notRun => 'Not executed.',
+      };
 
       executed.add(
         testCase.copyWith(
@@ -108,9 +130,11 @@ class AgenticTestExecutor {
           assertionReport: report,
           responseStatusCode: response.statusCode,
           responseTimeMs: responseTimeMs,
+          failureType: failureType,
         ),
       );
     }
+
     return executed;
   }
 
@@ -165,25 +189,26 @@ class AgenticTestExecutor {
     required Response response,
     required int? responseTimeMs,
   }) {
-    final normalizedAssertions = assertions
+    final cleanedAssertions = assertions
         .map((item) => item.trim())
         .where((item) => item.isNotEmpty)
         .toList();
 
-    if (normalizedAssertions.isEmpty) {
+    if (cleanedAssertions.isEmpty) {
       final statusCode = response.statusCode;
-      final passed = statusCode >= 200 && statusCode < 300;
+      final ok = statusCode >= 200 && statusCode < 300;
       return [
         _AssertionEvaluation(
-          type: passed
-              ? _AssertionResultType.passed
-              : _AssertionResultType.failed,
+          type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
+          failureType: ok
+              ? TestFailureType.none
+              : TestFailureType.statusCodeMismatch,
           message: 'Expected success status (2xx), got $statusCode.',
         ),
       ];
     }
 
-    return normalizedAssertions
+    return cleanedAssertions
         .map(
           (assertion) => _evaluateSingleAssertion(
             assertion: assertion,
@@ -203,104 +228,284 @@ class AgenticTestExecutor {
     final statusCode = response.statusCode;
     final body = response.body;
 
-    if (normalized.contains('status')) {
-      if (normalized.contains('2xx')) {
-        final ok = statusCode >= 200 && statusCode < 300;
-        return _AssertionEvaluation(
-          type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
-          message: '$assertion (actual: $statusCode)',
-        );
-      }
-
-      final betweenMatch = RegExp(
-        r'between\s+(\d{3})\s+and\s+(\d{3})',
-      ).firstMatch(normalized);
-      if (betweenMatch != null) {
-        final minCode = int.parse(betweenMatch.group(1)!);
-        final maxCode = int.parse(betweenMatch.group(2)!);
-        final ok = statusCode >= minCode && statusCode <= maxCode;
-        return _AssertionEvaluation(
-          type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
-          message: '$assertion (actual: $statusCode)',
-        );
-      }
-
-      final codes = RegExp(r'\b\d{3}\b')
-          .allMatches(normalized)
-          .map((match) => int.parse(match.group(0)!))
-          .toList();
-      if (codes.isNotEmpty) {
-        final ok = codes.contains(statusCode);
-        return _AssertionEvaluation(
-          type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
-          message: '$assertion (actual: $statusCode)',
-        );
-      }
+    if (_looksLikeStatusAssertion(normalized)) {
+      return _evaluateStatusAssertion(assertion, normalized, statusCode);
     }
 
-    if (normalized.contains('response time') ||
-        normalized.contains('latency')) {
-      final threshold = _extractFirstNumber(normalized);
-      if (threshold == null || responseTimeMs == null) {
-        return _AssertionEvaluation(
-          type: _AssertionResultType.skipped,
-          message: '$assertion (unable to infer threshold).',
-        );
-      }
-      final wantsLess =
-          normalized.contains('less than') || normalized.contains('under');
-      final wantsGreater =
-          normalized.contains('greater than') || normalized.contains('over');
-      final ok = wantsGreater
-          ? responseTimeMs > threshold
-          : wantsLess
-          ? responseTimeMs < threshold
-          : responseTimeMs <= threshold;
-      return _AssertionEvaluation(
-        type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
-        message: '$assertion (actual: ${responseTimeMs}ms)',
+    if (_looksLikeResponseTimeAssertion(normalized)) {
+      return _evaluateResponseTimeAssertion(
+        assertion,
+        normalized,
+        responseTimeMs,
       );
     }
 
-    if (normalized.contains('body')) {
-      if (normalized.contains('not empty')) {
-        final ok = body.trim().isNotEmpty;
-        return _AssertionEvaluation(
-          type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
-          message: assertion,
-        );
-      }
-
-      if (normalized.contains('empty')) {
-        final ok = body.trim().isEmpty;
-        return _AssertionEvaluation(
-          type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
-          message: assertion,
-        );
-      }
-
-      if (normalized.contains('array')) {
-        final decoded = _tryDecodeJson(body);
-        final ok = decoded is List;
-        return _AssertionEvaluation(
-          type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
-          message: assertion,
-        );
-      }
-
-      if (normalized.contains('json')) {
-        final decoded = _tryDecodeJson(body);
-        final ok = decoded != null;
-        return _AssertionEvaluation(
-          type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
-          message: assertion,
-        );
-      }
+    if (_looksLikeBodyAssertion(normalized)) {
+      return _evaluateBodyAssertion(assertion, normalized, body);
     }
 
+    return _unsupported(assertion);
+  }
+
+  bool _looksLikeStatusAssertion(String normalized) {
+    return normalized.contains('status') || normalized.contains('status_code');
+  }
+
+  bool _looksLikeResponseTimeAssertion(String normalized) {
+    return normalized.contains('response time') ||
+        normalized.contains('latency') ||
+        normalized.contains('time');
+  }
+
+  bool _looksLikeBodyAssertion(String normalized) {
+    return normalized.contains('body') ||
+        normalized.contains('json') ||
+        normalized.contains('array') ||
+        normalized.contains('object');
+  }
+
+  _AssertionEvaluation _evaluateStatusAssertion(
+    String assertion,
+    String normalized,
+    int statusCode,
+  ) {
+    if (normalized.contains('2xx')) {
+      final ok = statusCode >= 200 && statusCode < 300;
+      return _AssertionEvaluation(
+        type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
+        failureType: ok
+            ? TestFailureType.none
+            : TestFailureType.statusCodeMismatch,
+        message: '$assertion (actual: $statusCode)',
+      );
+    }
+
+    final betweenMatch = RegExp(
+      r'between\s+(\d{3})\s+and\s+(\d{3})',
+    ).firstMatch(normalized);
+    if (betweenMatch != null) {
+      final minCode = int.parse(betweenMatch.group(1)!);
+      final maxCode = int.parse(betweenMatch.group(2)!);
+      final ok = statusCode >= minCode && statusCode <= maxCode;
+      return _AssertionEvaluation(
+        type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
+        failureType: ok
+            ? TestFailureType.none
+            : TestFailureType.statusCodeMismatch,
+        message: '$assertion (actual: $statusCode)',
+      );
+    }
+
+    final codes = RegExp(r'\b\d{3}\b')
+        .allMatches(normalized)
+        .map((match) => int.parse(match.group(0)!))
+        .toList();
+    if (codes.isNotEmpty) {
+      final ok = codes.contains(statusCode);
+      return _AssertionEvaluation(
+        type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
+        failureType: ok
+            ? TestFailureType.none
+            : TestFailureType.statusCodeMismatch,
+        message: '$assertion (actual: $statusCode)',
+      );
+    }
+
+    return _unsupported(assertion);
+  }
+
+  _AssertionEvaluation _evaluateResponseTimeAssertion(
+    String assertion,
+    String normalized,
+    int? responseTimeMs,
+  ) {
+    final threshold = _extractFirstNumber(normalized);
+    if (threshold == null || responseTimeMs == null) {
+      return _unsupported('$assertion (unable to infer threshold)');
+    }
+
+    final wantsLess =
+        normalized.contains('less than') ||
+        normalized.contains('under') ||
+        normalized.contains('within') ||
+        normalized.contains('max');
+    final wantsGreater =
+        normalized.contains('greater than') ||
+        normalized.contains('over') ||
+        normalized.contains('more than') ||
+        normalized.contains('min');
+    final wantsAtLeast = normalized.contains('at least');
+    final wantsAtMost = normalized.contains('at most');
+    final wantsEqual =
+        normalized.contains('equals') ||
+        normalized.contains('exactly') ||
+        normalized.contains('==');
+
+    final ok = switch (true) {
+      _ when wantsAtLeast => responseTimeMs >= threshold,
+      _ when wantsAtMost => responseTimeMs <= threshold,
+      _ when wantsGreater => responseTimeMs > threshold,
+      _ when wantsEqual => responseTimeMs == threshold,
+      _ => wantsLess ? responseTimeMs < threshold : responseTimeMs <= threshold,
+    };
+
+    return _AssertionEvaluation(
+      type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
+      failureType: ok
+          ? TestFailureType.none
+          : TestFailureType.responseTimeExceeded,
+      message: '$assertion (actual: ${responseTimeMs}ms)',
+    );
+  }
+
+  _AssertionEvaluation _evaluateBodyAssertion(
+    String assertion,
+    String normalized,
+    String body,
+  ) {
+    if (normalized.contains('not empty')) {
+      final ok = body.trim().isNotEmpty;
+      return _AssertionEvaluation(
+        type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
+        failureType: ok
+            ? TestFailureType.none
+            : TestFailureType.bodyValidationFailed,
+        message: assertion,
+      );
+    }
+
+    if (normalized.contains('empty')) {
+      final ok = body.trim().isEmpty;
+      return _AssertionEvaluation(
+        type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
+        failureType: ok
+            ? TestFailureType.none
+            : TestFailureType.bodyValidationFailed,
+        message: assertion,
+      );
+    }
+
+    if (normalized.contains('array')) {
+      final decoded = _tryDecodeJson(body);
+      if (decoded is! List) {
+        return _AssertionEvaluation(
+          type: _AssertionResultType.failed,
+          failureType: TestFailureType.bodyValidationFailed,
+          message: '$assertion (actual: non-array body)',
+        );
+      }
+      final lengthCheck = _evaluateLengthConstraint(
+        assertion: assertion,
+        normalized: normalized,
+        actualLength: decoded.length,
+      );
+      return lengthCheck ??
+          _AssertionEvaluation(
+            type: _AssertionResultType.passed,
+            message: assertion,
+          );
+    }
+
+    if (normalized.contains('object') || normalized.contains('map')) {
+      final decoded = _tryDecodeJson(body);
+      final ok = decoded is Map;
+      return _AssertionEvaluation(
+        type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
+        failureType: ok
+            ? TestFailureType.none
+            : TestFailureType.bodyValidationFailed,
+        message: assertion,
+      );
+    }
+
+    if (normalized.contains('json')) {
+      final decoded = _tryDecodeJson(body);
+      final ok = decoded != null;
+      return _AssertionEvaluation(
+        type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
+        failureType: ok
+            ? TestFailureType.none
+            : TestFailureType.bodyValidationFailed,
+        message: assertion,
+      );
+    }
+
+    return _unsupported(assertion);
+  }
+
+  _AssertionEvaluation? _evaluateLengthConstraint({
+    required String assertion,
+    required String normalized,
+    required int actualLength,
+  }) {
+    if (!normalized.contains('length')) {
+      return null;
+    }
+    final target = _extractFirstNumber(normalized);
+    if (target == null) {
+      return _unsupported('$assertion (unable to infer length target)');
+    }
+
+    final wantsGreater =
+        normalized.contains('greater than') ||
+        normalized.contains('more than') ||
+        normalized.contains('over');
+    final wantsLess =
+        normalized.contains('less than') || normalized.contains('under');
+    final wantsAtLeast = normalized.contains('at least');
+    final wantsAtMost = normalized.contains('at most');
+    final wantsEqual =
+        normalized.contains('equals') ||
+        normalized.contains('exactly') ||
+        normalized.contains('==');
+
+    final ok = switch (true) {
+      _ when wantsAtLeast => actualLength >= target,
+      _ when wantsAtMost => actualLength <= target,
+      _ when wantsGreater => actualLength > target,
+      _ when wantsLess => actualLength < target,
+      _ when wantsEqual => actualLength == target,
+      _ => actualLength == target,
+    };
+
+    return _AssertionEvaluation(
+      type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
+      failureType: ok
+          ? TestFailureType.none
+          : TestFailureType.bodyValidationFailed,
+      message: '$assertion (actual length: $actualLength)',
+    );
+  }
+
+  TestFailureType _resolveFailureType(
+    List<_AssertionEvaluation> failed,
+    List<_AssertionEvaluation> skipped,
+  ) {
+    if (failed.isNotEmpty) {
+      final classified = failed.firstWhere(
+        (item) => item.failureType != TestFailureType.none,
+        orElse: () => failed.first,
+      );
+      return classified.failureType == TestFailureType.none
+          ? TestFailureType.unknown
+          : classified.failureType;
+    }
+
+    if (skipped.isNotEmpty &&
+        skipped.every(
+          (item) => item.failureType == TestFailureType.unsupportedAssertion,
+        )) {
+      return TestFailureType.unsupportedAssertion;
+    }
+
+    return TestFailureType.none;
+  }
+
+  _AssertionEvaluation _unsupported(String assertion) {
     return _AssertionEvaluation(
       type: _AssertionResultType.skipped,
-      message: '$assertion (not auto-verifiable yet).',
+      failureType: TestFailureType.unsupportedAssertion,
+      message: '$assertion (not auto-verifiable yet)',
     );
   }
 
