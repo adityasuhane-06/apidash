@@ -341,7 +341,7 @@ stateDiagram-v2
 
 Each transition is **guarded at the service layer** — invalid transitions are blocked before reaching UI, ensuring predictable behavior even under unexpected conditions.
 
-### 4.5 Human-in-the-Loop Control Points
+### 4.6 Human-in-the-Loop Control Points
 
 | Gate | When | User Actions | Why |
 |---|---|---|---|
@@ -722,12 +722,12 @@ Total planned effort: **175 hours** across 12 weeks.
 
 | Week | Hours | Focus Area | Implementation Target | Planned Evidence (PR/Artifact) |
 |---|---:|---|---|---|
-| 1 | 16 | Architecture freeze | Finalize state contracts, data models, transition guard rules | Architecture doc update + state-diagram commit |
-| 2 | 16 | Orchestrator hardening | Complete deterministic transition checks and action gating | Unit tests for valid/invalid transitions |
-| 3 | 18 | Generation quality | Improve prompt templates, parsing robustness, fallback behavior | PR with generator refinements + test snapshots |
-| 4 | 16 | Contract-aware generation | OpenAPI/request-context ingestion and normalizer improvements | PR with contract-context enhancements |
-| 5 | 18 | Execution depth | Expand assertion semantics and execution telemetry | PR with executor updates + result schema screenshots |
-| 6 | 16 | Validation reporting | Add richer failure categories and actionable diagnostics | PR with failure-reporting improvements |
+| 1 | 14 | Architecture freeze | Finalize state contracts, data models, transition guard rules | Architecture doc update + state-diagram commit |
+| 2 | 14 | Orchestrator hardening | Complete deterministic transition checks and action gating | Unit tests for valid/invalid transitions |
+| 3 | 16 | Generation quality | Improve prompt templates, parsing robustness, fallback behavior | PR with generator refinements + test snapshots |
+| 4 | 14 | Contract-aware generation | OpenAPI/request-context ingestion and normalizer improvements | PR with contract-context enhancements |
+| 5 | 15 | Execution depth | Expand assertion semantics and execution telemetry | PR with executor updates + result schema screenshots |
+| 6 | 14 | Validation reporting | Add richer failure categories and actionable diagnostics | PR with failure-reporting improvements |
 
 **Midterm deliverables:** robust orchestrator, contract-aware generation, comprehensive execution with failure classification.
 
@@ -735,11 +735,11 @@ Total planned effort: **175 hours** across 12 weeks.
 
 | Week | Hours | Focus Area | Implementation Target | Planned Evidence (PR/Artifact) |
 |---|---:|---|---|---|
-| 7 | 18 | Healing intelligence | Improve recommendation rationale/confidence and mapping logic | PR with healing planner improvements |
-| 8 | 16 | Healing governance | Tighten approval UX, strict-mode controls, rerun guardrails | PR with approval safety enhancements |
-| 9 | 18 | MCP Apps integration | Build adapter layer for generate/execute/report/heal operations | Design doc + first MCP-facing prototype |
-| 10 | 17 | Hardening + docs | Integration tests, refactors, and technical documentation | Quality PR + docs PR |
-| 11 | 13 | Mentor feedback window | Incorporate review comments and prioritize requested changes | Follow-up patch PRs based on mentor feedback |
+| 7 | 16 | Healing intelligence | Improve recommendation rationale/confidence and mapping logic | PR with healing planner improvements |
+| 8 | 14 | Healing governance | Tighten approval UX, strict-mode controls, rerun guardrails | PR with approval safety enhancements |
+| 9 | 16 | MCP Apps integration | Build adapter layer for generate/execute/report/heal operations | Design doc + first MCP-facing prototype |
+| 10 | 15 | Hardening + docs | Integration tests, refactors, and technical documentation | Quality PR + docs PR |
+| 11 | 14 | Mentor feedback window | Incorporate review comments and prioritize requested changes | Follow-up patch PRs based on mentor feedback |
 | 12 | 13 | Final stabilization | Final demo flow polish, release notes, handoff package | Final report + demo assets |
 
 **Final deliverables:** complete agentic testing lifecycle, MCP adapter layer, full documentation, demo-ready stability.
@@ -809,17 +809,17 @@ MCP Apps integration is planned as **additive and modular**. Core testing workfl
 
 ### 10.1 Product Metrics
 
-1. Reduce manual test creation effort significantly through guided generation.
-2. Improve failure diagnosis clarity with structured execution reports.
-3. Preserve explicit developer control for critical test modifications.
-4. Improve resilience to API drift through approval-based healing workflows.
+1. **Test generation output:** ≥ 5 meaningful test cases per endpoint from a single generation request.
+2. **Failure diagnosis clarity:** Every failed test includes a typed `FailureType` classification and a human-readable diagnostic string (no raw stack traces).
+3. **Developer control:** 100% of test executions and healing actions require explicit human approval; zero silent mutations.
+4. **Healing loop safety:** Max 3 heal iterations per test before terminal "manual fix required" status.
 
 ### 10.2 Engineering Metrics
 
-1. Reliable state transition behavior under tested scenarios.
-2. Strong automated coverage for state machine and executor logic.
-3. Low regression rate across incremental PR deliveries.
-4. Clear documentation for maintainers and future contributors.
+1. **Test coverage:** ≥ 80% line coverage on state machine, executor, and healing planner modules.
+2. **Transition correctness:** 100% of invalid state transitions blocked by guards (verified via unit tests for every illegal path).
+3. **Regression rate:** Zero regressions introduced across incremental PR deliveries (CI-gated).
+4. **Documentation:** Every public API class and service has dartdoc comments; contributor guide covers setup, testing, and extension points.
 
 ---
 
