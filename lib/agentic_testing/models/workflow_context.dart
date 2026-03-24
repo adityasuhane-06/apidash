@@ -22,6 +22,48 @@ class AgenticWorkflowContext {
   final String? statusMessage;
   final String? errorMessage;
 
+  factory AgenticWorkflowContext.fromJson(Map<String, dynamic> json) {
+    final workflowStateRaw =
+        (json['workflow_state'] as String?)?.trim().toLowerCase() ?? '';
+    final workflowState = AgenticWorkflowState.values.firstWhere(
+      (state) => state.name.toLowerCase() == workflowStateRaw,
+      orElse: () => AgenticWorkflowState.idle,
+    );
+
+    final requestHeadersRaw = json['request_headers'];
+    final requestHeaders = requestHeadersRaw is Map
+        ? requestHeadersRaw.map(
+            (key, value) => MapEntry(key.toString(), value.toString()),
+          )
+        : const <String, String>{};
+
+    final generatedTestsRaw = json['generated_tests'];
+    final generatedTests = generatedTestsRaw is List
+        ? generatedTestsRaw
+              .whereType<Map>()
+              .map(
+                (item) => AgenticTestCase.fromJson(
+                  Map<String, dynamic>.from(item),
+                  fallbackId: '',
+                  fallbackEndpoint: (json['endpoint'] as String?) ?? '',
+                  fallbackMethod: (json['request_method'] as String?) ?? 'GET',
+                ),
+              )
+              .toList()
+        : const <AgenticTestCase>[];
+
+    return AgenticWorkflowContext(
+      workflowState: workflowState,
+      endpoint: (json['endpoint'] as String?) ?? '',
+      requestMethod: (json['request_method'] as String?) ?? 'GET',
+      requestHeaders: requestHeaders,
+      requestBody: json['request_body'] as String?,
+      generatedTests: generatedTests,
+      statusMessage: json['status_message'] as String?,
+      errorMessage: json['error_message'] as String?,
+    );
+  }
+
   int get approvedCount => generatedTests
       .where((testCase) => testCase.decision == TestReviewDecision.approved)
       .length;
@@ -85,5 +127,20 @@ class AgenticWorkflowContext {
           ? null
           : (errorMessage ?? this.errorMessage),
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'workflow_state': workflowState.name,
+      'endpoint': endpoint,
+      'request_method': requestMethod,
+      'request_headers': requestHeaders,
+      'request_body': requestBody,
+      'generated_tests': generatedTests
+          .map((testCase) => testCase.toJson())
+          .toList(),
+      'status_message': statusMessage,
+      'error_message': errorMessage,
+    };
   }
 }

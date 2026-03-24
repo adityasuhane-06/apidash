@@ -25,6 +25,18 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
         ?.httpRequestModel
         ?.url;
     _endpointController = TextEditingController(text: initialEndpoint ?? '');
+    Future.microtask(() async {
+      await ref
+          .read(agenticTestingStateMachineProvider.notifier)
+          .hydrateFromCheckpoint();
+      if (!mounted) {
+        return;
+      }
+      final restored = ref.read(agenticTestingStateMachineProvider);
+      if (restored.endpoint.trim().isNotEmpty) {
+        _endpointController.text = restored.endpoint;
+      }
+    });
   }
 
   @override

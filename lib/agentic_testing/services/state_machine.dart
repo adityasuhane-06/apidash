@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/legacy.dart';
 
 import '../models/test_case_model.dart';
@@ -5,6 +7,7 @@ import '../models/workflow_context.dart';
 import '../models/workflow_state.dart';
 import 'test_executor.dart';
 import 'test_generator.dart';
+import 'workflow_checkpoint_storage.dart';
 
 class InvalidWorkflowTransitionException implements Exception {
   const InvalidWorkflowTransitionException(this.from, this.to);
@@ -22,12 +25,15 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
   AgenticTestingStateMachine({
     required AgenticTestGenerator testGenerator,
     required AgenticTestExecutor testExecutor,
+    required AgenticWorkflowCheckpointStorage checkpointStorage,
   }) : _testGenerator = testGenerator,
        _testExecutor = testExecutor,
+       _checkpointStorage = checkpointStorage,
        super(const AgenticWorkflowContext());
 
   final AgenticTestGenerator _testGenerator;
   final AgenticTestExecutor _testExecutor;
+  final AgenticWorkflowCheckpointStorage _checkpointStorage;
 
   static const Map<AgenticWorkflowState, Set<AgenticWorkflowState>>
   _allowedTransitions = {
@@ -48,6 +54,14 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
     AgenticWorkflowState.resultsReady: {AgenticWorkflowState.idle},
   };
 
+  Future<void> hydrateFromCheckpoint() async {
+    final checkpoint = await _checkpointStorage.load();
+    if (checkpoint == null) {
+      return;
+    }
+    _updateState(checkpoint);
+  }
+
   Future<void> startGeneration({
     required String endpoint,
     String? method,
@@ -60,17 +74,21 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
         : 'GET';
 
     if (normalizedEndpoint.isEmpty) {
-      state = state.copyWith(
-        errorMessage: 'Please provide an endpoint before generating tests.',
-        clearStatusMessage: true,
+      _updateState(
+        state.copyWith(
+          errorMessage: 'Please provide an endpoint before generating tests.',
+          clearStatusMessage: true,
+        ),
       );
       return;
     }
 
     if (state.workflowState != AgenticWorkflowState.idle) {
-      state = state.copyWith(
-        errorMessage:
-            'Cannot start generation while state is ${state.workflowState.label}.',
+      _updateState(
+        state.copyWith(
+          errorMessage:
+              'Cannot start generation while state is ${state.workflowState.label}.',
+        ),
       );
       return;
     }
@@ -117,8 +135,10 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
     }
 
     if (state.approvedCount == 0) {
-      state = state.copyWith(
-        errorMessage: 'Approve at least one test case before execution.',
+      _updateState(
+        state.copyWith(
+          errorMessage: 'Approve at least one test case before execution.',
+        ),
       );
       return;
     }
@@ -173,11 +193,13 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
         )
         .toList();
 
-    state = state.copyWith(
-      generatedTests: reviewedTests,
-      statusMessage:
-          'Approved ${reviewedTests.length} test cases. Run approved tests to execute.',
-      clearErrorMessage: true,
+    _updateState(
+      state.copyWith(
+        generatedTests: reviewedTests,
+        statusMessage:
+            'Approved ${reviewedTests.length} test cases. Run approved tests to execute.',
+        clearErrorMessage: true,
+      ),
     );
   }
 
@@ -192,11 +214,13 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
         )
         .toList();
 
-    state = state.copyWith(
-      generatedTests: reviewedTests,
-      statusMessage:
-          'Rejected ${reviewedTests.length} test cases. You can reset or re-generate.',
-      clearErrorMessage: true,
+    _updateState(
+      state.copyWith(
+        generatedTests: reviewedTests,
+        statusMessage:
+            'Rejected ${reviewedTests.length} test cases. You can reset or re-generate.',
+        clearErrorMessage: true,
+      ),
     );
   }
 
@@ -215,7 +239,7 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
       );
       return;
     }
-    state = const AgenticWorkflowContext();
+    _updateState(const AgenticWorkflowContext());
   }
 
   void _setDecision(String testId, TestReviewDecision decision) {
@@ -228,11 +252,13 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
       }
       return testCase.copyWith(decision: decision);
     }).toList();
-    state = state.copyWith(
-      generatedTests: updatedTests,
-      statusMessage:
-          'Reviewed ${updatedTests.length - _pendingCount(updatedTests)} of ${updatedTests.length} tests.',
-      clearErrorMessage: true,
+    _updateState(
+      state.copyWith(
+        generatedTests: updatedTests,
+        statusMessage:
+            'Reviewed ${updatedTests.length - _pendingCount(updatedTests)} of ${updatedTests.length} tests.',
+        clearErrorMessage: true,
+      ),
     );
   }
 
@@ -251,13 +277,20 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
 
   bool _requireState(AgenticWorkflowState expected) {
     if (state.workflowState != expected) {
-      state = state.copyWith(
-        errorMessage:
-            'Invalid action for current state ${state.workflowState.label}.',
+      _updateState(
+        state.copyWith(
+          errorMessage:
+              'Invalid action for current state ${state.workflowState.label}.',
+        ),
       );
       return false;
     }
     return true;
+  }
+
+  void _updateState(AgenticWorkflowContext next) {
+    state = next;
+    unawaited(_checkpointStorage.save(next));
   }
 
   void _transitionTo(
@@ -281,18 +314,20 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
       }
     }
 
-    state = state.copyWith(
-      workflowState: nextState,
-      endpoint: endpoint,
-      requestMethod: requestMethod,
-      requestHeaders: requestHeaders,
-      requestBody: requestBody,
-      clearRequestBody: clearRequestBody,
-      generatedTests: generatedTests,
-      statusMessage: statusMessage,
-      clearStatusMessage: clearStatusMessage,
-      errorMessage: errorMessage,
-      clearErrorMessage: clearErrorMessage,
+    _updateState(
+      state.copyWith(
+        workflowState: nextState,
+        endpoint: endpoint,
+        requestMethod: requestMethod,
+        requestHeaders: requestHeaders,
+        requestBody: requestBody,
+        clearRequestBody: clearRequestBody,
+        generatedTests: generatedTests,
+        statusMessage: statusMessage,
+        clearStatusMessage: clearStatusMessage,
+        errorMessage: errorMessage,
+        clearErrorMessage: clearErrorMessage,
+      ),
     );
   }
 }

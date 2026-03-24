@@ -43,9 +43,29 @@ class _FakeExecutor extends AgenticTestExecutor {
   }
 }
 
+class _InMemoryCheckpointStorage extends AgenticWorkflowCheckpointStorage {
+  AgenticWorkflowContext? _saved;
+
+  @override
+  Future<void> save(AgenticWorkflowContext context) async {
+    _saved = context;
+  }
+
+  @override
+  Future<AgenticWorkflowContext?> load() async {
+    return _saved;
+  }
+
+  @override
+  Future<void> clear() async {
+    _saved = null;
+  }
+}
+
 void main() {
   group('AgenticTestingStateMachine', () {
     test('moves to awaiting approval after generation', () async {
+      final storage = _InMemoryCheckpointStorage();
       final machine = AgenticTestingStateMachine(
         testGenerator: _FakeGenerator([
           const AgenticTestCase(
@@ -62,6 +82,7 @@ void main() {
           ({required tests, required defaultHeaders, requestBody}) async =>
               tests,
         ),
+        checkpointStorage: storage,
       );
 
       await machine.startGeneration(endpoint: 'https://api.apidash.dev/users');
@@ -75,6 +96,7 @@ void main() {
     });
 
     test('executes approved tests and moves to results ready', () async {
+      final storage = _InMemoryCheckpointStorage();
       final machine = AgenticTestingStateMachine(
         testGenerator: _FakeGenerator([
           const AgenticTestCase(
@@ -113,6 +135,7 @@ void main() {
                   )
                   .toList(),
         ),
+        checkpointStorage: storage,
       );
 
       await machine.startGeneration(endpoint: 'https://api.apidash.dev/users');
@@ -126,6 +149,7 @@ void main() {
     });
 
     test('shows error if executing without approved tests', () async {
+      final storage = _InMemoryCheckpointStorage();
       final machine = AgenticTestingStateMachine(
         testGenerator: _FakeGenerator([
           const AgenticTestCase(
@@ -142,6 +166,7 @@ void main() {
           ({required tests, required defaultHeaders, requestBody}) async =>
               tests,
         ),
+        checkpointStorage: storage,
       );
 
       await machine.startGeneration(endpoint: 'https://api.apidash.dev/users');
@@ -154,6 +179,49 @@ void main() {
       expect(
         machine.state.errorMessage,
         contains('Approve at least one test case'),
+      );
+    });
+
+    test('hydrates from checkpoint storage', () async {
+      final storage = _InMemoryCheckpointStorage();
+      await storage.save(
+        const AgenticWorkflowContext(
+          workflowState: AgenticWorkflowState.resultsReady,
+          endpoint: 'https://api.apidash.dev/users',
+          requestMethod: 'GET',
+          generatedTests: <AgenticTestCase>[
+            AgenticTestCase(
+              id: 't1',
+              title: 'Stored test',
+              description: 'restored from checkpoint',
+              method: 'GET',
+              endpoint: 'https://api.apidash.dev/users',
+              expectedOutcome: 'works',
+              assertions: <String>['status_code equals 200'],
+              decision: TestReviewDecision.approved,
+              executionStatus: TestExecutionStatus.passed,
+            ),
+          ],
+        ),
+      );
+
+      final machine = AgenticTestingStateMachine(
+        testGenerator: _FakeGenerator(const <AgenticTestCase>[]),
+        testExecutor: _FakeExecutor(
+          ({required tests, required defaultHeaders, requestBody}) async =>
+              tests,
+        ),
+        checkpointStorage: storage,
+      );
+
+      await machine.hydrateFromCheckpoint();
+
+      expect(machine.state.workflowState, AgenticWorkflowState.resultsReady);
+      expect(machine.state.endpoint, 'https://api.apidash.dev/users');
+      expect(machine.state.generatedTests, hasLength(1));
+      expect(
+        machine.state.generatedTests.first.executionStatus,
+        TestExecutionStatus.passed,
       );
     });
   });
