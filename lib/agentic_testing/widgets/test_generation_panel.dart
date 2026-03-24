@@ -55,6 +55,9 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
   Future<void> _onGeneratePressed() async {
     final selectedRequest = ref.read(selectedRequestModelProvider);
     final notifier = ref.read(agenticTestingStateMachineProvider.notifier);
+    final selectedContractContext = ref.read(
+      agenticSelectedRequestContractContextProvider,
+    );
 
     final endpoint = _endpointController.text.trim().isNotEmpty
         ? _endpointController.text.trim()
@@ -69,12 +72,22 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
       return;
     }
 
+    final selectedRequestUrl = selectedRequest?.httpRequestModel?.url.trim();
+    final shouldUseSelectedContract =
+        selectedContractContext != null &&
+        selectedRequestUrl != null &&
+        selectedRequestUrl.isNotEmpty &&
+        selectedRequestUrl == endpoint;
+
     await notifier.startGeneration(
       endpoint: endpoint,
       method: selectedRequest?.httpRequestModel?.method.name.toUpperCase(),
       headers: selectedRequest?.httpRequestModel?.headersMap,
       requestBody: selectedRequest?.httpRequestModel?.body,
       generationPrompt: _promptController.text.trim(),
+      contractContext: shouldUseSelectedContract
+          ? selectedContractContext
+          : null,
     );
   }
 
@@ -82,6 +95,9 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
   Widget build(BuildContext context) {
     final workflow = ref.watch(agenticTestingStateMachineProvider);
     final notifier = ref.read(agenticTestingStateMachineProvider.notifier);
+    final selectedContractContext = ref.watch(
+      agenticSelectedRequestContractContextProvider,
+    );
     final isGenerating =
         workflow.workflowState == AgenticWorkflowState.generating;
     final isExecuting =
@@ -190,6 +206,14 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
                 'Example: Focus on auth failures, pagination edge cases, and response-time checks.',
           ),
         ),
+        if (selectedContractContext != null &&
+            selectedContractContext.hasAnyHints) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Contract-aware generation available (${selectedContractContext.source}). It is applied when endpoint matches the selected request URL.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
         if (isBusy) ...[
           const SizedBox(height: 12),
           const LinearProgressIndicator(),

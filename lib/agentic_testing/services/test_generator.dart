@@ -3,12 +3,20 @@ import 'dart:convert';
 import 'package:apidash/utils/utils.dart';
 import 'package:apidash_core/apidash_core.dart';
 
+import '../models/contract_context.dart';
 import '../models/test_case_model.dart';
 
+typedef AgenticGenerateAiRequest =
+    Future<String?> Function(AIRequestModel request);
+
 class AgenticTestGenerator {
-  AgenticTestGenerator({required this.readDefaultModel});
+  AgenticTestGenerator({
+    required this.readDefaultModel,
+    AgenticGenerateAiRequest? generateAiRequest,
+  }) : _generateAiRequest = generateAiRequest ?? executeGenAIRequest;
 
   final Map<String, dynamic>? Function() readDefaultModel;
+  final AgenticGenerateAiRequest _generateAiRequest;
 
   Future<List<AgenticTestCase>> generateTests({
     required String endpoint,
@@ -16,6 +24,7 @@ class AgenticTestGenerator {
     Map<String, String>? headers,
     String? requestBody,
     String? generationPrompt,
+    AgenticContractContext? contractContext,
   }) async {
     final aiModelJson = readDefaultModel();
     if (aiModelJson == null) {
@@ -32,7 +41,7 @@ class AgenticTestGenerator {
     final normalizedPrompt = generationPrompt?.trim();
     final hasPrompt = normalizedPrompt != null && normalizedPrompt.isNotEmpty;
 
-    final response = await executeGenAIRequest(
+    final response = await _generateAiRequest(
       baseRequest.copyWith(
         systemPrompt: _buildSystemPrompt(
           endpoint: endpoint,
@@ -40,6 +49,7 @@ class AgenticTestGenerator {
           headers: headers ?? const <String, String>{},
           requestBody: requestBody,
           generationPrompt: normalizedPrompt,
+          contractContext: contractContext,
         ),
         userPrompt: hasPrompt
             ? 'Generate API tests using this guidance: $normalizedPrompt'
@@ -149,7 +159,13 @@ class AgenticTestGenerator {
     required Map<String, String> headers,
     required String? requestBody,
     required String? generationPrompt,
+    required AgenticContractContext? contractContext,
   }) {
+    final contractSection =
+        contractContext == null || !contractContext.hasAnyHints
+        ? 'No explicit contract context available.'
+        : contractContext.toPromptSection();
+
     return '''
 You are an API testing assistant for API Dash.
 
@@ -159,6 +175,8 @@ Generate 3 to 5 focused API test cases for this endpoint:
 - Headers: ${jsonEncode(headers)}
 - Request Body: ${requestBody ?? ''}
 - Additional User Guidance: ${generationPrompt ?? 'None'}
+- Contract Context:
+$contractSection
 
 Return ONLY valid JSON in this exact shape:
 {
@@ -178,6 +196,8 @@ Return ONLY valid JSON in this exact shape:
 Rules:
 - Keep each test actionable and realistic.
 - Cover positive, negative, and edge conditions.
+- If contract context is provided, prioritize it over assumptions.
+- Do not invent required fields that are absent from contract context.
 - confidence must be a number between 0 and 1.
 - No markdown, no explanation, JSON only.
 ''';

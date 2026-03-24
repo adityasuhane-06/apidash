@@ -20,6 +20,7 @@ class _FakeGenerator extends AgenticTestGenerator {
     Map<String, String>? headers,
     String? requestBody,
     String? generationPrompt,
+    AgenticContractContext? contractContext,
   }) async {
     return output;
   }

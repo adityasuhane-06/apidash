@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/legacy.dart';
 
 import '../models/test_case_model.dart';
+import '../models/contract_context.dart';
 import '../models/workflow_context.dart';
 import '../models/workflow_state.dart';
 import 'healing_planner.dart';
@@ -94,6 +95,7 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
     Map<String, String>? headers,
     String? requestBody,
     String? generationPrompt,
+    AgenticContractContext? contractContext,
   }) async {
     final normalizedEndpoint = endpoint.trim();
     final resolvedMethod = (method?.trim().isNotEmpty == true)
@@ -131,7 +133,9 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
           ? null
           : normalizedPrompt,
       generatedTests: const <AgenticTestCase>[],
-      statusMessage: 'Generating test cases...',
+      statusMessage: contractContext != null && contractContext.hasAnyHints
+          ? 'Generating test cases using contract context...'
+          : 'Generating test cases...',
       clearErrorMessage: true,
     );
 
@@ -142,13 +146,14 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
         headers: headers,
         requestBody: requestBody,
         generationPrompt: normalizedPrompt,
+        contractContext: contractContext,
       );
 
       _transitionTo(
         AgenticWorkflowState.awaitingApproval,
         generatedTests: _resetExecutionAndHealing(tests),
         statusMessage:
-            'Generated ${tests.length} test cases. Review and approve before execution.',
+            'Generated ${tests.length} test cases${contractContext != null && contractContext.hasAnyHints ? ' (contract-aware)' : ''}. Review and approve before execution.',
         clearErrorMessage: true,
       );
     } catch (e) {
