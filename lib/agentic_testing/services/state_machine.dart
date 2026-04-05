@@ -29,16 +29,23 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
     required AgenticTestExecutor testExecutor,
     required AgenticTestHealingPlanner healingPlanner,
     required AgenticWorkflowCheckpointStorage checkpointStorage,
+    String checkpointSessionKey =
+        AgenticWorkflowCheckpointStorage.defaultSessionKey,
   }) : _testGenerator = testGenerator,
        _testExecutor = testExecutor,
        _healingPlanner = healingPlanner,
        _checkpointStorage = checkpointStorage,
+       _checkpointSessionKey =
+           AgenticWorkflowCheckpointStorage.normalizeSessionKey(
+             checkpointSessionKey,
+           ),
        super(const AgenticWorkflowContext());
 
   final AgenticTestGenerator _testGenerator;
   final AgenticTestExecutor _testExecutor;
   final AgenticTestHealingPlanner _healingPlanner;
   final AgenticWorkflowCheckpointStorage _checkpointStorage;
+  String _checkpointSessionKey;
 
   static const Map<AgenticWorkflowState, Set<AgenticWorkflowState>>
   _allowedTransitions = {
@@ -67,6 +74,7 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
     },
     AgenticWorkflowState.awaitingHealApproval: {
       AgenticWorkflowState.reExecuting,
+      AgenticWorkflowState.finalReport,
       AgenticWorkflowState.resultsReady,
       AgenticWorkflowState.idle,
     },
@@ -82,11 +90,26 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
   };
 
   Future<void> hydrateFromCheckpoint() async {
-    final checkpoint = await _checkpointStorage.load();
+    final checkpoint = await _checkpointStorage.loadForSession(
+      sessionKey: _checkpointSessionKey,
+    );
     if (checkpoint == null) {
       return;
     }
     _updateState(checkpoint);
+  }
+
+  void setCheckpointSessionKey(String? sessionKey) {
+    _checkpointSessionKey =
+        AgenticWorkflowCheckpointStorage.normalizeSessionKey(sessionKey);
+  }
+
+  /// Forcefully restores workflow state from an external session snapshot.
+  ///
+  /// This is used by chat-scoped agent loop sessions so each request can
+  /// operate on its own deterministic workflow snapshot.
+  void restoreFromSnapshot(AgenticWorkflowContext snapshot) {
+    state = snapshot;
   }
 
   Future<void> startGeneration({
@@ -376,6 +399,19 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
     }
   }
 
+  void skipHealingRerunToFinalReport() {
+    if (!_requireState(AgenticWorkflowState.awaitingHealApproval)) {
+      return;
+    }
+
+    _transitionTo(
+      AgenticWorkflowState.finalReport,
+      statusMessage:
+          'Healing re-run skipped by user. Final report uses current execution results.',
+      clearErrorMessage: true,
+    );
+  }
+
   void approveTest(String testId) {
     _setDecision(testId, TestReviewDecision.approved);
   }
@@ -421,6 +457,125 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
         generatedTests: reviewedTests,
         statusMessage:
             'Rejected ${reviewedTests.length} test cases. You can reset or re-generate.',
+        clearErrorMessage: true,
+      ),
+    );
+  }
+
+  void updateTestCaseDraft({
+    required String testId,
+    String? title,
+    String? description,
+    String? expectedOutcome,
+    List<String>? assertions,
+    bool appendAssertions = false,
+  }) {
+    if (!_requireState(AgenticWorkflowState.awaitingApproval)) {
+      return;
+    }
+
+    final normalizedAssertions = (assertions ?? const <String>[])
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+
+    final updatedTests = state.generatedTests.map((testCase) {
+      if (testCase.id != testId) {
+        return testCase;
+      }
+      final mergedAssertions = normalizedAssertions.isEmpty
+          ? testCase.assertions
+          : appendAssertions
+          ? <String>{...testCase.assertions, ...normalizedAssertions}.toList()
+          : normalizedAssertions;
+
+      return testCase.copyWith(
+        title: title?.trim().isNotEmpty == true
+            ? title!.trim()
+            : testCase.title,
+        description: description?.trim().isNotEmpty == true
+            ? description!.trim()
+            : testCase.description,
+        expectedOutcome: expectedOutcome?.trim().isNotEmpty == true
+            ? expectedOutcome!.trim()
+            : testCase.expectedOutcome,
+        assertions: mergedAssertions,
+        decision: TestReviewDecision.pending,
+        executionStatus: TestExecutionStatus.notRun,
+        clearExecutionSummary: true,
+        assertionReport: const <String>[],
+        clearResponseStatusCode: true,
+        clearResponseTimeMs: true,
+        failureType: TestFailureType.none,
+        healingDecision: TestHealingDecision.none,
+        clearHealingSuggestion: true,
+        healingAssertions: const <String>[],
+        healingIteration: 0,
+      );
+    }).toList();
+
+    _updateState(
+      state.copyWith(
+        generatedTests: updatedTests,
+        statusMessage:
+            'Updated test case details. Review the updated test before execution.',
+        clearErrorMessage: true,
+      ),
+    );
+  }
+
+  void addTestCaseDraft({
+    required String title,
+    String? description,
+    String? expectedOutcome,
+    List<String>? assertions,
+    String? endpoint,
+    String? method,
+  }) {
+    if (!_requireState(AgenticWorkflowState.awaitingApproval)) {
+      return;
+    }
+
+    final normalizedTitle = title.trim().isNotEmpty
+        ? title.trim()
+        : 'Custom test ${state.generatedTests.length + 1}';
+    final normalizedDescription = description?.trim().isNotEmpty == true
+        ? description!.trim()
+        : 'User-added custom test case.';
+    final normalizedExpectedOutcome = expectedOutcome?.trim().isNotEmpty == true
+        ? expectedOutcome!.trim()
+        : 'Request satisfies the custom assertions.';
+    final normalizedAssertions = (assertions ?? const <String>[])
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toList();
+
+    final created = AgenticTestCase(
+      id: 'custom_${DateTime.now().microsecondsSinceEpoch}',
+      title: normalizedTitle,
+      description: normalizedDescription,
+      method: (method?.trim().isNotEmpty == true
+          ? method!.trim().toUpperCase()
+          : state.requestMethod),
+      endpoint: endpoint?.trim().isNotEmpty == true
+          ? endpoint!.trim()
+          : state.endpoint,
+      expectedOutcome: normalizedExpectedOutcome,
+      assertions: normalizedAssertions.isNotEmpty
+          ? normalizedAssertions
+          : const <String>['Status code is 200'],
+      decision: TestReviewDecision.pending,
+      executionStatus: TestExecutionStatus.notRun,
+      failureType: TestFailureType.none,
+      healingDecision: TestHealingDecision.none,
+    );
+
+    final updatedTests = [...state.generatedTests, created];
+    _updateState(
+      state.copyWith(
+        generatedTests: updatedTests,
+        statusMessage:
+            'Added custom test case "${created.title}". Review and approve before execution.',
         clearErrorMessage: true,
       ),
     );
@@ -556,7 +711,12 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
 
   void _updateState(AgenticWorkflowContext next) {
     state = next;
-    unawaited(_checkpointStorage.save(next));
+    unawaited(
+      _checkpointStorage.saveForSession(
+        sessionKey: _checkpointSessionKey,
+        context: next,
+      ),
+    );
   }
 
   void _transitionTo(

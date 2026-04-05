@@ -65,10 +65,19 @@ class _FakeHealingPlanner extends AgenticTestHealingPlanner {
 
 class _InMemoryCheckpointStorage extends AgenticWorkflowCheckpointStorage {
   AgenticWorkflowContext? _saved;
+  final Map<String, AgenticWorkflowContext> _scoped = {};
 
   @override
   Future<void> save(AgenticWorkflowContext context) async {
     _saved = context;
+  }
+
+  @override
+  Future<void> saveForSession({
+    required String sessionKey,
+    required AgenticWorkflowContext context,
+  }) async {
+    _scoped[sessionKey] = context;
   }
 
   @override
@@ -77,8 +86,21 @@ class _InMemoryCheckpointStorage extends AgenticWorkflowCheckpointStorage {
   }
 
   @override
+  Future<AgenticWorkflowContext?> loadForSession({
+    required String sessionKey,
+  }) async {
+    return _scoped[sessionKey];
+  }
+
+  @override
   Future<void> clear() async {
     _saved = null;
+    _scoped.clear();
+  }
+
+  @override
+  Future<void> clearForSession({required String sessionKey}) async {
+    _scoped.remove(sessionKey);
   }
 }
 
@@ -89,12 +111,15 @@ void main() {
       required _FakeExecutor executor,
       _FakeHealingPlanner? planner,
       _InMemoryCheckpointStorage? storage,
+      String checkpointSessionKey =
+          AgenticWorkflowCheckpointStorage.defaultSessionKey,
     }) {
       return AgenticTestingStateMachine(
         testGenerator: generator,
         testExecutor: executor,
         healingPlanner: planner ?? _FakeHealingPlanner(),
         checkpointStorage: storage ?? _InMemoryCheckpointStorage(),
+        checkpointSessionKey: checkpointSessionKey,
       );
     }
 
@@ -240,10 +265,45 @@ void main() {
       );
     });
 
+    test('adds custom test draft during awaiting approval', () async {
+      final machine = buildMachine(
+        generator: _FakeGenerator([
+          const AgenticTestCase(
+            id: 't1',
+            title: 'Status is 200',
+            description: 'Basic success check',
+            method: 'GET',
+            endpoint: 'https://api.apidash.dev/users',
+            expectedOutcome: 'Returns success',
+            assertions: ['status_code equals 200'],
+          ),
+        ]),
+        executor: _FakeExecutor(
+          ({required tests, required defaultHeaders, requestBody}) async =>
+              tests,
+        ),
+      );
+
+      await machine.startGeneration(endpoint: 'https://api.apidash.dev/users');
+      machine.addTestCaseDraft(
+        title: 'Custom email format',
+        assertions: const ['email should match regex'],
+      );
+
+      expect(machine.state.generatedTests.length, 2);
+      expect(machine.state.generatedTests.last.title, 'Custom email format');
+      expect(
+        machine.state.generatedTests.last.decision,
+        TestReviewDecision.pending,
+      );
+      expect(machine.state.statusMessage, contains('Added custom test case'));
+    });
+
     test('hydrates from checkpoint storage', () async {
       final storage = _InMemoryCheckpointStorage();
-      await storage.save(
-        const AgenticWorkflowContext(
+      await storage.saveForSession(
+        sessionKey: 'r1',
+        context: const AgenticWorkflowContext(
           workflowState: AgenticWorkflowState.resultsReady,
           endpoint: 'https://api.apidash.dev/users',
           requestMethod: 'GET',
@@ -270,6 +330,7 @@ void main() {
               tests,
         ),
         storage: storage,
+        checkpointSessionKey: 'r1',
       );
 
       await machine.hydrateFromCheckpoint();
@@ -281,6 +342,57 @@ void main() {
         machine.state.generatedTests.first.executionStatus,
         TestExecutionStatus.passed,
       );
+    });
+
+    test('checkpoint scope is isolated per session key', () async {
+      final storage = _InMemoryCheckpointStorage();
+      await storage.saveForSession(
+        sessionKey: 'rA',
+        context: const AgenticWorkflowContext(
+          workflowState: AgenticWorkflowState.resultsReady,
+          endpoint: 'https://api.apidash.dev/users',
+          requestMethod: 'GET',
+          generatedTests: <AgenticTestCase>[
+            AgenticTestCase(
+              id: 't1',
+              title: 'Stored test',
+              description: 'restored from checkpoint',
+              method: 'GET',
+              endpoint: 'https://api.apidash.dev/users',
+              expectedOutcome: 'works',
+              assertions: <String>['status_code equals 200'],
+              decision: TestReviewDecision.approved,
+              executionStatus: TestExecutionStatus.passed,
+            ),
+          ],
+        ),
+      );
+
+      final machineA = buildMachine(
+        generator: _FakeGenerator(const <AgenticTestCase>[]),
+        executor: _FakeExecutor(
+          ({required tests, required defaultHeaders, requestBody}) async =>
+              tests,
+        ),
+        storage: storage,
+        checkpointSessionKey: 'rA',
+      );
+
+      final machineB = buildMachine(
+        generator: _FakeGenerator(const <AgenticTestCase>[]),
+        executor: _FakeExecutor(
+          ({required tests, required defaultHeaders, requestBody}) async =>
+              tests,
+        ),
+        storage: storage,
+        checkpointSessionKey: 'rB',
+      );
+
+      await machineA.hydrateFromCheckpoint();
+      await machineB.hydrateFromCheckpoint();
+
+      expect(machineA.state.workflowState, AgenticWorkflowState.resultsReady);
+      expect(machineB.state.workflowState, AgenticWorkflowState.idle);
     });
 
     test('generates healing plans for failed tests', () async {
@@ -389,5 +501,45 @@ void main() {
         );
       },
     );
+
+    test('allows skipping healing rerun directly to final report', () async {
+      final machine = buildMachine(
+        generator: _FakeGenerator([
+          const AgenticTestCase(
+            id: 't1',
+            title: 'Status is 200',
+            description: 'Basic success check',
+            method: 'GET',
+            endpoint: 'https://api.apidash.dev/users',
+            expectedOutcome: 'Returns success',
+            assertions: ['status_code equals 200'],
+          ),
+        ]),
+        executor: _FakeExecutor(
+          ({required tests, required defaultHeaders, requestBody}) async =>
+              tests
+                  .map(
+                    (t) => t.copyWith(
+                      executionStatus: TestExecutionStatus.failed,
+                      failureType: TestFailureType.statusCodeMismatch,
+                      responseStatusCode: 500,
+                    ),
+                  )
+                  .toList(),
+        ),
+      );
+
+      await machine.startGeneration(endpoint: 'https://api.apidash.dev/users');
+      machine.approveAll();
+      await machine.executeApprovedTests();
+      await machine.generateHealingPlans();
+      machine.skipHealingRerunToFinalReport();
+
+      expect(machine.state.workflowState, AgenticWorkflowState.finalReport);
+      expect(
+        machine.state.statusMessage,
+        contains('Healing re-run skipped by user'),
+      );
+    });
   });
 }

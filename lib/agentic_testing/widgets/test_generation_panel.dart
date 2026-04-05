@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/test_case_model.dart';
 import '../models/workflow_state.dart';
 import '../providers/agentic_testing_providers.dart';
+import '../services/workflow_checkpoint_storage.dart';
 import 'test_review_card.dart';
 
 class TestGenerationPanel extends ConsumerStatefulWidget {
@@ -19,6 +20,12 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
   late final TextEditingController _endpointController;
   late final TextEditingController _promptController;
 
+  String _currentCheckpointSessionKey() {
+    return AgenticWorkflowCheckpointStorage.normalizeSessionKey(
+      ref.read(selectedRequestModelProvider)?.id,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -29,9 +36,9 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
     _endpointController = TextEditingController(text: initialEndpoint ?? '');
     _promptController = TextEditingController();
     Future.microtask(() async {
-      await ref
-          .read(agenticTestingStateMachineProvider.notifier)
-          .hydrateFromCheckpoint();
+      final notifier = ref.read(agenticTestingStateMachineProvider.notifier);
+      notifier.setCheckpointSessionKey(_currentCheckpointSessionKey());
+      await notifier.hydrateFromCheckpoint();
       if (!mounted) {
         return;
       }
@@ -55,6 +62,7 @@ class _TestGenerationPanelState extends ConsumerState<TestGenerationPanel> {
   Future<void> _onGeneratePressed() async {
     final selectedRequest = ref.read(selectedRequestModelProvider);
     final notifier = ref.read(agenticTestingStateMachineProvider.notifier);
+    notifier.setCheckpointSessionKey(_currentCheckpointSessionKey());
     final selectedContractContext = ref.read(
       agenticSelectedRequestContractContextProvider,
     );
