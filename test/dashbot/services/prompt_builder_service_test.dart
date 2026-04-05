@@ -122,6 +122,17 @@ void main() {
       expect(p!.trim(), isNotEmpty);
     });
 
+    test('agentic workflow task prompt includes prior run summary', () {
+      final p = builder.buildTaskPrompt(
+        request,
+        ChatMessageType.agenticWorkflow,
+        priorRunSummary: 'State=results_ready | Failed=1',
+      );
+      expect(p, isNotNull);
+      expect(p!, contains('Agentic Workflow Planner'));
+      expect(p, contains('Failed=1'));
+    });
+
     group('history block', () {
       test('empty history returns empty string', () {
         expect(builder.buildHistoryBlock(const []), isEmpty);
@@ -204,6 +215,14 @@ void main() {
           contains('Python'));
       expect(builder.detectLanguage('Show me curl'), 'cURL');
       expect(builder.detectLanguage('random text'), isNull);
+    });
+
+    test('agentic workflow task user message is available', () {
+      final message = builder.getUserMessageForTask(
+        ChatMessageType.agenticWorkflow,
+      );
+      expect(message.toLowerCase(), contains('agentic'));
+      expect(message.toLowerCase(), contains('workflow'));
     });
   });
 }

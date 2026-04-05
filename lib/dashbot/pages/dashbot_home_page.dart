@@ -49,6 +49,16 @@ class _DashbotHomePageState extends ConsumerState<DashbotHomePage> {
                     Navigator.of(context).pushNamed(DashbotRoutes.dashbotChat);
                   },
                 ),
+                HomeScreenTaskButton(
+                  label: "🧠 Agentic Workflow",
+                  onPressed: () {
+                    ref.read(dashbotActiveRouteProvider.notifier).goToChat();
+                    Navigator.of(context).pushNamed(
+                      DashbotRoutes.dashbotChat,
+                      arguments: ChatMessageType.agenticWorkflow,
+                    );
+                  },
+                ),
               ],
               HomeScreenTaskButton(
                 label: "🔎 Explain me this response",

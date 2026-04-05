@@ -1,3 +1,4 @@
+import 'agentic_workflow.dart';
 import 'codegen_intro.dart';
 import 'curl_insights.dart';
 import 'debug_api_error.dart';
@@ -37,6 +38,22 @@ class DashbotPrompts {
   /// General user interaction prompt enforcing strict JSON-only output and off-topic refusal.
   String generalInteractionPrompt() {
     return buildGeneralInteractionPrompt();
+  }
+
+  String agenticWorkflowPrompt({
+    String? url,
+    String? method,
+    Map<String, String>? headersMap,
+    String? body,
+    String? priorRunSummary,
+  }) {
+    return buildAgenticWorkflowPrompt(
+      url: url,
+      method: method,
+      headersMap: headersMap,
+      body: body,
+      priorRunSummary: priorRunSummary,
+    );
   }
 
   String explainApiResponsePrompt({

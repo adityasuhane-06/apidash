@@ -261,6 +261,13 @@ void main() {
         ChatActionType.noAction,
         ChatActionType.uploadAsset,
         ChatActionType.downloadDoc,
+        ChatActionType.proposePlan,
+        ChatActionType.approvePlan,
+        ChatActionType.rejectPlan,
+        ChatActionType.skipStep,
+        ChatActionType.executeStep,
+        ChatActionType.confirmSatisfaction,
+        ChatActionType.requestChanges,
       ];
       for (final t in types) {
         final res = await auto.apply(ChatAction(

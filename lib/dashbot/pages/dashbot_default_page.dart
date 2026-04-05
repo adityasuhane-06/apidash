@@ -46,6 +46,15 @@ class DashbotDefaultPage extends StatelessWidget {
               },
             ),
             HomeScreenTaskButton(
+              label: 'Agentic Workflow',
+              onPressed: () {
+                Navigator.of(context).pushNamed(
+                  DashbotRoutes.dashbotChat,
+                  arguments: ChatMessageType.agenticWorkflow,
+                );
+              },
+            ),
+            HomeScreenTaskButton(
               label: 'Import cURL',
               onPressed: () {
                 Navigator.of(context).pushNamed(

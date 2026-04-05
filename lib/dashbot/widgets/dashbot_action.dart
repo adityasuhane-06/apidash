@@ -40,6 +40,17 @@ class DashbotActionWidgetFactory {
         return null;
       case ChatActionType.downloadDoc:
         return DashbotDownloadDocButton(action: action);
+      case ChatActionType.proposePlan:
+      case ChatActionType.approvePlan:
+      case ChatActionType.rejectPlan:
+      case ChatActionType.skipStep:
+      case ChatActionType.executeStep:
+      case ChatActionType.confirmSatisfaction:
+      case ChatActionType.requestChanges:
+        if (action.targetType == ChatActionTarget.agenticWorkflow) {
+          return DashbotAgentLoopActionButton(action: action);
+        }
+        return null;
       case ChatActionType.noAction:
         if (action.action == 'import_now_openapi') {
           return DashbotImportNowButton(action: action);

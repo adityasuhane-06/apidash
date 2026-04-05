@@ -363,6 +363,32 @@ class AgenticTestExecutor {
     String normalized,
     String body,
   ) {
+    final decoded = _tryDecodeJson(body);
+    final codeLike = _evaluateCodeLikeJsonAssertion(
+      assertion: assertion,
+      normalized: normalized,
+      decodedBody: decoded,
+    );
+    if (codeLike != null) {
+      return codeLike;
+    }
+
+    final fieldName = _extractTopLevelFieldName(
+      assertion: assertion,
+      normalized: normalized,
+    );
+    if (fieldName != null) {
+      final fieldCheck = _evaluateTopLevelFieldAssertion(
+        assertion: assertion,
+        normalized: normalized,
+        decodedBody: decoded,
+        fieldName: fieldName,
+      );
+      if (fieldCheck != null) {
+        return fieldCheck;
+      }
+    }
+
     if (normalized.contains('not empty')) {
       final ok = body.trim().isNotEmpty;
       return _AssertionEvaluation(
@@ -386,7 +412,6 @@ class AgenticTestExecutor {
     }
 
     if (normalized.contains('array')) {
-      final decoded = _tryDecodeJson(body);
       if (decoded is! List) {
         return _AssertionEvaluation(
           type: _AssertionResultType.failed,
@@ -407,7 +432,6 @@ class AgenticTestExecutor {
     }
 
     if (normalized.contains('object') || normalized.contains('map')) {
-      final decoded = _tryDecodeJson(body);
       final ok = decoded is Map;
       return _AssertionEvaluation(
         type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
@@ -419,7 +443,6 @@ class AgenticTestExecutor {
     }
 
     if (normalized.contains('json')) {
-      final decoded = _tryDecodeJson(body);
       final ok = decoded != null;
       return _AssertionEvaluation(
         type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
@@ -431,6 +454,386 @@ class AgenticTestExecutor {
     }
 
     return _unsupported(assertion);
+  }
+
+  _AssertionEvaluation? _evaluateCodeLikeJsonAssertion({
+    required String assertion,
+    required String normalized,
+    required dynamic decodedBody,
+  }) {
+    if (!normalized.contains('response.json')) {
+      return null;
+    }
+
+    if (normalized.contains('array.isarray(response.json())')) {
+      final ok = decodedBody is List;
+      return _AssertionEvaluation(
+        type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
+        failureType: ok
+            ? TestFailureType.none
+            : TestFailureType.bodyValidationFailed,
+        message: ok ? assertion : '$assertion (actual: non-array body)',
+      );
+    }
+
+    final isinstanceBodyMatch = RegExp(
+      r'isinstance\(\s*response\.json\(\)\s*,\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)',
+      caseSensitive: false,
+    ).firstMatch(assertion);
+    if (isinstanceBodyMatch != null) {
+      final typeToken = (isinstanceBodyMatch.group(1) ?? '').toLowerCase();
+      final ok = _matchesExpectedType(decodedBody, typeToken);
+      return _AssertionEvaluation(
+        type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
+        failureType: ok
+            ? TestFailureType.none
+            : TestFailureType.bodyValidationFailed,
+        message: ok ? assertion : '$assertion (actual: incompatible type)',
+      );
+    }
+
+    if (decodedBody is! Map) {
+      return _AssertionEvaluation(
+        type: _AssertionResultType.failed,
+        failureType: TestFailureType.bodyValidationFailed,
+        message: '$assertion (actual: non-object body)',
+      );
+    }
+
+    final inMatch = RegExp(
+      r"""['"]([^'"]+)['"]\s+(not\s+)?in\s+response\.json\(\)""",
+      caseSensitive: false,
+    ).firstMatch(assertion);
+    if (inMatch != null) {
+      final field = inMatch.group(1)?.trim() ?? '';
+      final negated = (inMatch.group(2) ?? '').trim().isNotEmpty;
+      if (field.isEmpty) {
+        return _unsupported(assertion);
+      }
+      final key = _resolveFieldKey(decodedBody, field);
+      final present = key != null;
+      final ok = negated ? !present : present;
+      return _AssertionEvaluation(
+        type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
+        failureType: ok
+            ? TestFailureType.none
+            : TestFailureType.bodyValidationFailed,
+        message: ok
+            ? assertion
+            : '$assertion (actual: ${present ? 'field present' : 'field missing'})',
+      );
+    }
+
+    final getValueMatch = RegExp(
+      r'''response\.json\(\)\.get\(\s*['"]([^'"]+)['"]\s*\)(?:\s*([=!]=)\s*(.+))?$''',
+      caseSensitive: false,
+    ).firstMatch(assertion.trim());
+    if (getValueMatch != null) {
+      final field = (getValueMatch.group(1) ?? '').trim();
+      if (field.isEmpty) {
+        return _unsupported(assertion);
+      }
+      final key = _resolveFieldKey(decodedBody, field);
+      if (key == null) {
+        return _AssertionEvaluation(
+          type: _AssertionResultType.failed,
+          failureType: TestFailureType.bodyValidationFailed,
+          message: "$assertion (actual: missing field '$field')",
+        );
+      }
+      final actual = decodedBody[key];
+      final operator = (getValueMatch.group(2) ?? '').trim();
+      final rawExpected = (getValueMatch.group(3) ?? '').trim();
+      if (operator.isEmpty || rawExpected.isEmpty) {
+        return _AssertionEvaluation(
+          type: _AssertionResultType.passed,
+          failureType: TestFailureType.none,
+          message: assertion,
+        );
+      }
+      final expected = _parseExpectedLiteral(rawExpected);
+      final equal = actual == expected;
+      final ok = operator == '!=' ? !equal : equal;
+      return _AssertionEvaluation(
+        type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
+        failureType: ok
+            ? TestFailureType.none
+            : TestFailureType.bodyValidationFailed,
+        message: '$assertion (actual: $actual)',
+      );
+    }
+
+    final bracketValueMatch = RegExp(
+      r'''response\.json\(\)\[['"]([^'"]+)['"]\](?:\s*([=!]=)\s*(.+))?$''',
+      caseSensitive: false,
+    ).firstMatch(assertion.trim());
+    if (bracketValueMatch != null) {
+      final field = (bracketValueMatch.group(1) ?? '').trim();
+      final key = _resolveFieldKey(decodedBody, field);
+      if (key == null) {
+        return _AssertionEvaluation(
+          type: _AssertionResultType.failed,
+          failureType: TestFailureType.bodyValidationFailed,
+          message: "$assertion (actual: missing field '$field')",
+        );
+      }
+      final actual = decodedBody[key];
+      final operator = (bracketValueMatch.group(2) ?? '').trim();
+      final rawExpected = (bracketValueMatch.group(3) ?? '').trim();
+      if (operator.isEmpty || rawExpected.isEmpty) {
+        return _AssertionEvaluation(
+          type: _AssertionResultType.passed,
+          failureType: TestFailureType.none,
+          message: assertion,
+        );
+      }
+      final expected = _parseExpectedLiteral(rawExpected);
+      final equal = actual == expected;
+      final ok = operator == '!=' ? !equal : equal;
+      return _AssertionEvaluation(
+        type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
+        failureType: ok
+            ? TestFailureType.none
+            : TestFailureType.bodyValidationFailed,
+        message: '$assertion (actual: $actual)',
+      );
+    }
+
+    final isinstanceFieldMatch = RegExp(
+      r'''isinstance\(\s*response\.json\(\)\.get\(\s*['"]([^'"]+)['"]\s*\)\s*,\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)''',
+      caseSensitive: false,
+    ).firstMatch(assertion);
+    if (isinstanceFieldMatch != null) {
+      final field = (isinstanceFieldMatch.group(1) ?? '').trim();
+      final expectedType = (isinstanceFieldMatch.group(2) ?? '')
+          .trim()
+          .toLowerCase();
+      final key = _resolveFieldKey(decodedBody, field);
+      if (key == null) {
+        return _AssertionEvaluation(
+          type: _AssertionResultType.failed,
+          failureType: TestFailureType.bodyValidationFailed,
+          message: "$assertion (actual: missing field '$field')",
+        );
+      }
+      final actual = decodedBody[key];
+      final ok = _matchesExpectedType(actual, expectedType);
+      return _AssertionEvaluation(
+        type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
+        failureType: ok
+            ? TestFailureType.none
+            : TestFailureType.bodyValidationFailed,
+        message: ok ? assertion : '$assertion (actual: $actual)',
+      );
+    }
+
+    return null;
+  }
+
+  dynamic _parseExpectedLiteral(String rawExpected) {
+    final normalized = rawExpected.trim().replaceAll(RegExp(r'[;,]+$'), '');
+    if (normalized.isEmpty) {
+      return normalized;
+    }
+    final quoted = RegExp(r'''^['"](.+?)['"]$''').firstMatch(normalized);
+    if (quoted != null) {
+      return quoted.group(1) ?? '';
+    }
+    if (normalized.toLowerCase() == 'true') {
+      return true;
+    }
+    if (normalized.toLowerCase() == 'false') {
+      return false;
+    }
+    if (normalized.toLowerCase() == 'null') {
+      return null;
+    }
+    final numeric = num.tryParse(normalized);
+    if (numeric != null) {
+      return numeric;
+    }
+    return normalized;
+  }
+
+  bool _matchesExpectedType(dynamic value, String expectedType) {
+    return switch (expectedType.toLowerCase()) {
+      'int' || 'integer' => value is int,
+      'float' || 'double' || 'number' || 'num' => value is num,
+      'str' || 'string' => value is String,
+      'bool' || 'boolean' => value is bool,
+      'list' || 'array' => value is List,
+      'dict' || 'map' || 'object' => value is Map,
+      _ => false,
+    };
+  }
+
+  String? _extractTopLevelFieldName({
+    required String assertion,
+    required String normalized,
+  }) {
+    if (!normalized.contains('field') && !normalized.contains('key')) {
+      return null;
+    }
+
+    final singleQuoted = RegExp(r"'([^']+)'").firstMatch(assertion);
+    if (singleQuoted != null) {
+      final value = singleQuoted.group(1)?.trim();
+      if (value != null && value.isNotEmpty) {
+        return value;
+      }
+    }
+
+    final doubleQuoted = RegExp(r'"([^"]+)"').firstMatch(assertion);
+    if (doubleQuoted != null) {
+      final value = doubleQuoted.group(1)?.trim();
+      if (value != null && value.isNotEmpty) {
+        return value;
+      }
+    }
+
+    final namedMatch = RegExp(
+      r'(?:field|key)\s+named\s+([a-zA-Z0-9_.-]+)',
+    ).firstMatch(normalized);
+    if (namedMatch != null) {
+      final value = namedMatch.group(1)?.trim();
+      if (value != null && value.isNotEmpty) {
+        return value;
+      }
+    }
+
+    final suffixMatch = RegExp(
+      r'([a-zA-Z0-9_.-]+)\s+field',
+    ).firstMatch(normalized);
+    if (suffixMatch != null) {
+      final value = suffixMatch.group(1)?.trim();
+      if (value != null &&
+          value.isNotEmpty &&
+          value != 'response' &&
+          value != 'body') {
+        return value;
+      }
+    }
+
+    return null;
+  }
+
+  _AssertionEvaluation? _evaluateTopLevelFieldAssertion({
+    required String assertion,
+    required String normalized,
+    required dynamic decodedBody,
+    required String fieldName,
+  }) {
+    if (decodedBody is! Map) {
+      return _AssertionEvaluation(
+        type: _AssertionResultType.failed,
+        failureType: TestFailureType.bodyValidationFailed,
+        message: '$assertion (actual: non-object body)',
+      );
+    }
+
+    final resolvedKey = _resolveFieldKey(decodedBody, fieldName);
+    if (resolvedKey == null) {
+      return _AssertionEvaluation(
+        type: _AssertionResultType.failed,
+        failureType: TestFailureType.bodyValidationFailed,
+        message: "$assertion (actual: missing field '$fieldName')",
+      );
+    }
+
+    final fieldValue = decodedBody[resolvedKey];
+    if (normalized.contains('array')) {
+      final ok = fieldValue is List;
+      return _AssertionEvaluation(
+        type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
+        failureType: ok
+            ? TestFailureType.none
+            : TestFailureType.bodyValidationFailed,
+        message: ok ? assertion : "$assertion (actual: non-array field value)",
+      );
+    }
+
+    if (normalized.contains('object') || normalized.contains('map')) {
+      final ok = fieldValue is Map;
+      return _AssertionEvaluation(
+        type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
+        failureType: ok
+            ? TestFailureType.none
+            : TestFailureType.bodyValidationFailed,
+        message: ok ? assertion : "$assertion (actual: non-object field value)",
+      );
+    }
+
+    if (normalized.contains('string')) {
+      final ok = fieldValue is String;
+      return _AssertionEvaluation(
+        type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
+        failureType: ok
+            ? TestFailureType.none
+            : TestFailureType.bodyValidationFailed,
+        message: ok ? assertion : "$assertion (actual: non-string field value)",
+      );
+    }
+
+    if (normalized.contains('number') ||
+        normalized.contains('integer') ||
+        normalized.contains('int') ||
+        normalized.contains('float') ||
+        normalized.contains('double')) {
+      final ok = fieldValue is num;
+      return _AssertionEvaluation(
+        type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
+        failureType: ok
+            ? TestFailureType.none
+            : TestFailureType.bodyValidationFailed,
+        message: ok ? assertion : "$assertion (actual: non-number field value)",
+      );
+    }
+
+    if (normalized.contains('boolean') || normalized.contains('bool')) {
+      final ok = fieldValue is bool;
+      return _AssertionEvaluation(
+        type: ok ? _AssertionResultType.passed : _AssertionResultType.failed,
+        failureType: ok
+            ? TestFailureType.none
+            : TestFailureType.bodyValidationFailed,
+        message: ok
+            ? assertion
+            : "$assertion (actual: non-boolean field value)",
+      );
+    }
+
+    if (_looksLikeFieldPresenceAssertion(normalized)) {
+      return _AssertionEvaluation(
+        type: _AssertionResultType.passed,
+        failureType: TestFailureType.none,
+        message: assertion,
+      );
+    }
+
+    return null;
+  }
+
+  bool _looksLikeFieldPresenceAssertion(String normalized) {
+    return normalized.contains('has') ||
+        normalized.contains('contains') ||
+        normalized.contains('exists') ||
+        normalized.contains('field named') ||
+        normalized.contains('top-level field') ||
+        normalized.contains('top level field');
+  }
+
+  String? _resolveFieldKey(Map<dynamic, dynamic> object, String expectedField) {
+    if (object.containsKey(expectedField)) {
+      return expectedField;
+    }
+    final expectedLower = expectedField.toLowerCase();
+    for (final key in object.keys) {
+      final keyString = key.toString();
+      if (keyString.toLowerCase() == expectedLower) {
+        return keyString;
+      }
+    }
+    return null;
   }
 
   _AssertionEvaluation? _evaluateLengthConstraint({

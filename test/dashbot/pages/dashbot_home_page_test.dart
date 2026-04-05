@@ -87,6 +87,32 @@ void main() {
     expect(capturedArgs, isNull);
   });
 
+  testWidgets('Agentic Workflow button appears and works in debug mode',
+      (tester) async {
+    String? capturedRoute;
+    Object? capturedArgs;
+
+    await _pumpHomePage(
+      tester,
+      onRoute: (name, arguments) {
+        capturedRoute = name;
+        capturedArgs = arguments;
+      },
+    );
+
+    final buttonFinder = _taskButton('Agentic Workflow');
+    expect(buttonFinder, findsOneWidget);
+
+    await tester.tap(find.descendant(
+      of: buttonFinder,
+      matching: find.byType(TextButton),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(capturedRoute, DashbotRoutes.dashbotChat);
+    expect(capturedArgs, ChatMessageType.agenticWorkflow);
+  });
+
   group('Quick action buttons navigate with correct arguments', () {
     testWidgets('Explain me this response button', (tester) async {
       String? capturedRoute;

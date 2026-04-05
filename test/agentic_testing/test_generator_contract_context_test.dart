@@ -55,5 +55,22 @@ void main() {
       expect(systemPrompt, contains('Expected Status Codes: 200, 404'));
       expect(systemPrompt, contains('Requires Auth: yes'));
     });
+
+    test('fallback tests use clear endpoint-specific titles', () async {
+      final generator = AgenticTestGenerator(
+        readDefaultModel: () => const AIRequestModel().toJson(),
+        generateAiRequest: (request) async => 'not valid json',
+      );
+
+      final tests = await generator.generateTests(
+        endpoint: 'https://api.apidash.dev/users',
+        method: 'GET',
+      );
+
+      expect(tests, hasLength(3));
+      expect(tests[0].title, 'GET /users returns success for valid request');
+      expect(tests[1].title, 'GET /users rejects missing or invalid auth');
+      expect(tests[2].title, 'GET /users validates malformed input');
+    });
   });
 }

@@ -424,6 +424,19 @@ void main() {
       });
     });
 
+    group('agentLoopCoordinatorProvider', () {
+      test('should create AgentLoopCoordinator instance', () {
+        final coordinator = container.read(agentLoopCoordinatorProvider);
+        expect(coordinator, isA<AgentLoopCoordinator>());
+      });
+
+      test('should return same instance on multiple reads', () {
+        final c1 = container.read(agentLoopCoordinatorProvider);
+        final c2 = container.read(agentLoopCoordinatorProvider);
+        expect(c1, same(c2));
+      });
+    });
+
     group('Real provider implementation coverage', () {
       late ProviderContainer realContainer;
 

@@ -18,12 +18,16 @@ void main() {
         chatSessions: {
           'r1': [msg]
         },
+        loopSessions: {
+          'r1': const AgentLoopSession(requestId: 'r1'),
+        },
         isGenerating: true,
         currentStreamingResponse: 'stream',
         currentRequestId: 'r1',
         lastError: failure,
       );
       expect(next.chatSessions['r1']!.single, msg);
+      expect(next.loopSessions['r1']!.requestId, 'r1');
       expect(next.isGenerating, true);
       expect(next.currentStreamingResponse, 'stream');
       expect(next.currentRequestId, 'r1');
@@ -35,6 +39,7 @@ void main() {
       // Calling copyWith with NO arguments hits fallback (right side of ??)
       final same = next.copyWith();
       expect(same.chatSessions, next.chatSessions);
+      expect(same.loopSessions, next.loopSessions);
       expect(same.isGenerating, next.isGenerating);
       expect(same.currentStreamingResponse, next.currentStreamingResponse);
       expect(same.currentRequestId, next.currentRequestId);
@@ -43,12 +48,14 @@ void main() {
       // Explicit null parameters should also fall back to existing values
       final viaNulls = next.copyWith(
         chatSessions: null,
+        loopSessions: null,
         isGenerating: null,
         currentStreamingResponse: null,
         currentRequestId: null,
         lastError: null,
       );
       expect(viaNulls.chatSessions, next.chatSessions);
+      expect(viaNulls.loopSessions, next.loopSessions);
       expect(viaNulls.isGenerating, next.isGenerating);
       expect(viaNulls.currentStreamingResponse, next.currentStreamingResponse);
       expect(viaNulls.currentRequestId, next.currentRequestId);

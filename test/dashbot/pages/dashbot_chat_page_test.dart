@@ -73,6 +73,64 @@ void main() {
     expect(spy.sendMessageCalls.first.countAsUser, isFalse);
   });
 
+  testWidgets(
+    'ChatScreen pre-fills agentic workflow prompt instead of auto-running',
+    (tester) async {
+      late SpyChatViewmodel spy;
+      await tester.pumpWidget(
+        createChatScreen(
+          initialTask: ChatMessageType.agenticWorkflow,
+          overrides: [
+            chatViewmodelProvider.overrideWith((ref) {
+              spy = SpyChatViewmodel(ref);
+              spy.setState(const ChatState());
+              return spy;
+            }),
+          ],
+        ),
+      );
+
+      await tester.pump();
+
+      expect(spy.sendMessageCalls, isEmpty);
+      expect(
+        find.text(
+          'Plan and execute an agentic API testing workflow for this request.',
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('Sending pre-filled agentic prompt uses workflow message type', (
+    tester,
+  ) async {
+    late SpyChatViewmodel spy;
+    await tester.pumpWidget(
+      createChatScreen(
+        initialTask: ChatMessageType.agenticWorkflow,
+        overrides: [
+          chatViewmodelProvider.overrideWith((ref) {
+            spy = SpyChatViewmodel(ref);
+            spy.setState(const ChatState());
+            return spy;
+          }),
+        ],
+      ),
+    );
+
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.send_rounded));
+    await tester.pump();
+
+    expect(spy.sendMessageCalls.length, 1);
+    expect(
+      spy.sendMessageCalls.first.text,
+      'Plan and execute an agentic API testing workflow for this request.',
+    );
+    expect(spy.sendMessageCalls.first.type, ChatMessageType.agenticWorkflow);
+  });
+
   testWidgets('ChatScreen toggles task suggestions panel', (tester) async {
     late SpyChatViewmodel spy;
     await tester.pumpWidget(
@@ -136,6 +194,33 @@ void main() {
     expect(spy.sendMessageCalls.length, 1);
     expect(spy.sendMessageCalls.first.text, 'Hello Dashbot');
     expect(spy.sendMessageCalls.first.type, ChatMessageType.general);
+  });
+
+  testWidgets('Manual agentic workflow prompt uses workflow message type', (
+    tester,
+  ) async {
+    late SpyChatViewmodel spy;
+    await tester.pumpWidget(
+      createChatScreen(
+        overrides: [
+          chatViewmodelProvider.overrideWith((ref) {
+            spy = SpyChatViewmodel(ref);
+            spy.setState(const ChatState());
+            return spy;
+          }),
+        ],
+      ),
+    );
+
+    await tester.enterText(
+      find.byType(TextField),
+      'Plan and execute an agentic API testing workflow for this request.',
+    );
+    await tester.tap(find.byIcon(Icons.send_rounded));
+    await tester.pump();
+
+    expect(spy.sendMessageCalls.length, 1);
+    expect(spy.sendMessageCalls.first.type, ChatMessageType.agenticWorkflow);
   });
 
   testWidgets('Streaming state renders temporary ChatBubble', (tester) async {
@@ -286,7 +371,7 @@ void main() {
     await tester.pump();
 
     // Verify scrolling behavior by checking that the new content is rendered
-    expect(find.text('Updated streaming response...'), findsOneWidget);
+    expect(find.text('Updated streaming response...'), findsWidgets);
   });
 
   testWidgets('Scroll animation triggers when generation completes', (

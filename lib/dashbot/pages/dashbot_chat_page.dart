@@ -16,9 +16,13 @@ class ChatScreen extends ConsumerStatefulWidget {
 }
 
 class _ChatScreenState extends ConsumerState<ChatScreen> {
+  static const String _agenticWorkflowStarterPrompt =
+      'Plan and execute an agentic API testing workflow for this request.';
+
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool _showTaskSuggestions = false;
+  ChatMessageType? _pendingSendType;
 
   @override
   void initState() {
@@ -28,6 +32,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       if (!mounted) return;
       final task = widget.initialTask;
       if (task != null) {
+        if (task == ChatMessageType.agenticWorkflow) {
+          // Keep strict HITL by letting the user explicitly send the first
+          // workflow prompt rather than auto-running on page open.
+          _textController.text = _agenticWorkflowStarterPrompt;
+          _pendingSendType = ChatMessageType.agenticWorkflow;
+          return;
+        }
         final vm = ref.read(chatViewmodelProvider.notifier);
         vm.sendTaskMessage(task);
       }
@@ -51,6 +62,33 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         );
       }
     });
+  }
+
+  void _sendCurrentInput() {
+    final vm = ref.read(chatViewmodelProvider.notifier);
+    final text = _textController.text;
+    if (text.trim().isEmpty) {
+      return;
+    }
+    var sendType = _pendingSendType ?? ChatMessageType.general;
+    if (sendType == ChatMessageType.general &&
+        _looksLikeAgenticWorkflowPrompt(text)) {
+      sendType = ChatMessageType.agenticWorkflow;
+    }
+    _pendingSendType = null;
+    _textController.clear();
+    vm.sendMessage(text: text, type: sendType);
+    _scrollToBottom();
+  }
+
+  bool _looksLikeAgenticWorkflowPrompt(String input) {
+    final normalized = input.toLowerCase().trim();
+    if (normalized.isEmpty) {
+      return false;
+    }
+    return normalized.contains('agentic') &&
+        normalized.contains('api testing') &&
+        normalized.contains('workflow');
   }
 
   @override
@@ -91,6 +129,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         return ChatBubble(
                           message: state.currentStreamingResponse,
                           role: MessageRole.system,
+                          isLoading: true,
                         );
                       }
                       final message = msgs[index];
@@ -111,9 +150,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             thickness: 6,
           ),
           if (_showTaskSuggestions)
-            DashbotTaskButtons(
-              onTaskSelected: _scrollToBottom,
-            ),
+            DashbotTaskButtons(onTaskSelected: _scrollToBottom),
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: Row(
@@ -124,7 +161,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   onPressed: ref.watch(chatViewmodelProvider).isGenerating
                       ? null
                       : () => setState(
-                          () => _showTaskSuggestions = !_showTaskSuggestions),
+                          () => _showTaskSuggestions = !_showTaskSuggestions,
+                        ),
                 ),
                 ADIconButton(
                   icon: Icons.clear_all_rounded,
@@ -153,15 +191,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     ),
                     enabled: !ref.watch(chatViewmodelProvider).isGenerating,
                     onSubmitted: (_) {
-                      final vm = ref.read(chatViewmodelProvider.notifier);
                       if (!ref.read(chatViewmodelProvider).isGenerating) {
-                        final text = _textController.text;
-                        _textController.clear();
-                        vm.sendMessage(
-                          text: text,
-                          type: ChatMessageType.general,
-                        );
-                        _scrollToBottom();
+                        _sendCurrentInput();
                       }
                     },
                   ),
@@ -171,16 +202,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   icon: const Icon(Icons.send_rounded),
                   onPressed: ref.watch(chatViewmodelProvider).isGenerating
                       ? null
-                      : () {
-                          final vm = ref.read(chatViewmodelProvider.notifier);
-                          final text = _textController.text;
-                          _textController.clear();
-                          vm.sendMessage(
-                            text: text,
-                            type: ChatMessageType.general,
-                          );
-                          _scrollToBottom();
-                        },
+                      : _sendCurrentInput,
                   tooltip: 'Send message',
                 ),
               ],

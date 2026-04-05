@@ -28,6 +28,15 @@ void main() {
       expect(action.path, isNull);
     });
 
+    test('fromJson maps workflow snake_case target and action', () {
+      final action = ChatAction.fromJson({
+        'action': 'execute_step',
+        'target': 'agentic_workflow',
+      });
+      expect(action.actionType, ChatActionType.executeStep);
+      expect(action.targetType, ChatActionTarget.agenticWorkflow);
+    });
+
     test('toJson produces expected keys & enum strings', () {
       const action = ChatAction(
         action: 'download_doc',

@@ -9,6 +9,13 @@ void main() {
       expect(m['b'], 'x');
     });
 
+    test('parses JSON object wrapped as a quoted JSON string', () {
+      const input = '"{\\"explanation\\":\\"Plan ready\\",\\"actions\\":[]}"';
+      final m = MessageJson.safeParse(input);
+      expect(m['explanation'], 'Plan ready');
+      expect(m['actions'], isA<List<dynamic>>());
+    });
+
     test('returns empty map for non-object top-level JSON', () {
       final m = MessageJson.safeParse('[1,2,3]');
       expect(m, isEmpty);
@@ -23,8 +30,10 @@ void main() {
     });
 
     test('throws FormatException on invalid JSON with no braces slice', () {
-      expect(() => MessageJson.safeParse('totally invalid'),
-          throwsFormatException);
+      expect(
+        () => MessageJson.safeParse('totally invalid'),
+        throwsFormatException,
+      );
     });
 
     test('falls back to slice between first { and last }', () {
@@ -32,6 +41,21 @@ void main() {
       final m = MessageJson.safeParse(input);
       expect(m['z'], 42);
       expect(m['k'], 'v');
+    });
+
+    test('repairs invalid backslash escapes inside JSON strings', () {
+      const input = r'{"explanation":"email regex ^[^\s@]+@[^\s@]+$"}';
+      final m = MessageJson.safeParse(input);
+      expect(m['explanation'], contains(r'\s@'));
+    });
+
+    test('repairs raw newline characters inside JSON strings', () {
+      const input = '''
+{"explanation":"line one
+line two","actions":[]}
+''';
+      final m = MessageJson.safeParse(input);
+      expect(m['explanation'], 'line one\nline two');
     });
   });
 }

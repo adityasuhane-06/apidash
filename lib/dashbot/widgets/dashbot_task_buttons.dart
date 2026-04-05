@@ -61,6 +61,13 @@ class DashbotTaskButtons extends ConsumerWidget {
                 },
               ),
               HomeScreenTaskButton(
+                label: '🧠 Agentic Workflow',
+                onPressed: () {
+                  vm.sendTaskMessage(ChatMessageType.agenticWorkflow);
+                  onTaskSelected?.call();
+                },
+              ),
+              HomeScreenTaskButton(
                 label: '🧩 Generate Code',
                 onPressed: () {
                   vm.sendTaskMessage(ChatMessageType.generateCode);

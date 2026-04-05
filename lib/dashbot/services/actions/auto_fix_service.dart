@@ -83,6 +83,13 @@ class AutoFixService {
       case ChatActionType.noAction:
       case ChatActionType.uploadAsset:
       case ChatActionType.downloadDoc:
+      case ChatActionType.proposePlan:
+      case ChatActionType.approvePlan:
+      case ChatActionType.rejectPlan:
+      case ChatActionType.skipStep:
+      case ChatActionType.executeStep:
+      case ChatActionType.confirmSatisfaction:
+      case ChatActionType.requestChanges:
         return null;
     }
   }

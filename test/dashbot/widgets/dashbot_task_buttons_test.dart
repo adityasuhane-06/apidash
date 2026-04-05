@@ -39,6 +39,7 @@ void main() {
       '🐞 Help me debug this error': ChatMessageType.debugError,
       '📄 Generate documentation': ChatMessageType.generateDoc,
       '📝 Generate Tests': ChatMessageType.generateTest,
+      '🧠 Agentic Workflow': ChatMessageType.agenticWorkflow,
       '🧩 Generate Code': ChatMessageType.generateCode,
       '📥 Import cURL': ChatMessageType.importCurl,
       '📄 Import OpenAPI': ChatMessageType.importOpenApi,

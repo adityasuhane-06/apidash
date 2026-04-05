@@ -91,18 +91,26 @@ class AgenticTestGenerator {
     }
 
     final generated = <AgenticTestCase>[];
+    var index = 0;
     for (final item in rawTests) {
       if (item is! Map) {
         continue;
       }
+      final parsed = AgenticTestCase.fromJson(
+        Map<String, dynamic>.from(item),
+        fallbackId: getNewUuid(),
+        fallbackEndpoint: endpoint,
+        fallbackMethod: method,
+      );
       generated.add(
-        AgenticTestCase.fromJson(
-          Map<String, dynamic>.from(item),
-          fallbackId: getNewUuid(),
-          fallbackEndpoint: endpoint,
-          fallbackMethod: method,
+        _normalizeGeneratedCase(
+          parsed,
+          index: index,
+          endpoint: endpoint,
+          method: method,
         ),
       );
+      index += 1;
     }
 
     if (generated.isEmpty) {
@@ -207,10 +215,12 @@ Rules:
     required String endpoint,
     required String method,
   }) {
+    final route = _shortEndpointLabel(endpoint);
+    final methodUpper = method.toUpperCase();
     return [
       AgenticTestCase(
         id: getNewUuid(),
-        title: 'Happy path returns success',
+        title: '$methodUpper $route returns success for valid request',
         description: 'Validate that a valid request is handled successfully.',
         method: method,
         endpoint: endpoint,
@@ -223,7 +233,7 @@ Rules:
       ),
       AgenticTestCase(
         id: getNewUuid(),
-        title: 'Unauthorized request is rejected',
+        title: '$methodUpper $route rejects missing or invalid auth',
         description:
             'Validate access control by sending request without required auth.',
         method: method,
@@ -237,7 +247,7 @@ Rules:
       ),
       AgenticTestCase(
         id: getNewUuid(),
-        title: 'Validation error for malformed input',
+        title: '$methodUpper $route validates malformed input',
         description:
             'Send invalid payload/params and verify server-side validation.',
         method: method,
@@ -250,5 +260,104 @@ Rules:
         confidence: 0.61,
       ),
     ];
+  }
+
+  AgenticTestCase _normalizeGeneratedCase(
+    AgenticTestCase testCase, {
+    required int index,
+    required String endpoint,
+    required String method,
+  }) {
+    final title = testCase.title.trim();
+    if (!_isGenericTitle(title)) {
+      return testCase;
+    }
+    return testCase.copyWith(
+      title: _suggestTitle(
+        testCase,
+        index: index,
+        endpoint: endpoint,
+        method: method,
+      ),
+    );
+  }
+
+  bool _isGenericTitle(String title) {
+    if (title.isEmpty) {
+      return true;
+    }
+    final normalized = title.toLowerCase().trim();
+    const genericTitles = <String>{
+      'test',
+      'api test',
+      'generated test',
+      'generated test case',
+      'test case',
+      'scenario',
+      'sample test',
+    };
+    if (genericTitles.contains(normalized)) {
+      return true;
+    }
+    return normalized.startsWith('test case');
+  }
+
+  String _suggestTitle(
+    AgenticTestCase testCase, {
+    required int index,
+    required String endpoint,
+    required String method,
+  }) {
+    final textBundle = [
+      testCase.description,
+      testCase.expectedOutcome,
+      ...testCase.assertions,
+    ].join(' ').toLowerCase();
+    final route = _shortEndpointLabel(endpoint);
+    final methodUpper = method.toUpperCase();
+
+    if (textBundle.contains('unauthor') ||
+        textBundle.contains('auth') ||
+        textBundle.contains('401') ||
+        textBundle.contains('403')) {
+      return '$methodUpper $route rejects missing or invalid auth';
+    }
+    if (textBundle.contains('validation') ||
+        textBundle.contains('malformed') ||
+        textBundle.contains('invalid') ||
+        textBundle.contains('400') ||
+        textBundle.contains('422')) {
+      return '$methodUpper $route validates malformed input';
+    }
+    if (textBundle.contains('latency') ||
+        textBundle.contains('response time') ||
+        textBundle.contains('ms')) {
+      return '$methodUpper $route meets response time expectations';
+    }
+    if (textBundle.contains('2xx') ||
+        textBundle.contains('200') ||
+        textBundle.contains('success')) {
+      return '$methodUpper $route returns success for valid request';
+    }
+    return '$methodUpper $route scenario ${index + 1}';
+  }
+
+  String _shortEndpointLabel(String endpoint) {
+    final raw = endpoint.trim();
+    if (raw.isEmpty) {
+      return '/';
+    }
+    try {
+      final uri = Uri.parse(raw);
+      if (uri.path.isNotEmpty) {
+        return uri.path;
+      }
+    } catch (_) {
+      // Use raw endpoint as fallback when parsing fails.
+    }
+    if (raw.startsWith('/')) {
+      return raw;
+    }
+    return '/$raw';
   }
 }

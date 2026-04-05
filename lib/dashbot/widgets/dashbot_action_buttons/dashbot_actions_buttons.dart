@@ -1,4 +1,5 @@
 export 'dashbot_add_test_button.dart';
+export 'dashbot_agent_loop_action_button.dart';
 export 'dashbot_apply_curl_button.dart';
 export 'dashbot_auto_fix_button.dart';
 export 'dashbot_download_doc_button.dart';

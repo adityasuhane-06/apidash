@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/legacy.dart';
 
 import '../models/contract_context.dart';
 import '../models/workflow_context.dart';
+import '../mcp/adapter.dart';
 import '../services/healing_planner.dart';
 import '../services/state_machine.dart';
 import '../services/test_contract_normalizer.dart';
@@ -63,3 +64,13 @@ final agenticTestingStateMachineProvider =
         checkpointStorage: ref.read(agenticWorkflowCheckpointStorageProvider),
       );
     });
+
+final agenticTestingMcpAdapterProvider = Provider<AgenticTestingMcpAdapter>((
+  ref,
+) {
+  return AgenticTestingMcpAdapterImpl(
+    testGenerator: ref.read(agenticTestGeneratorProvider),
+    testExecutor: ref.read(agenticTestExecutorProvider),
+    healingPlanner: ref.read(agenticTestHealingPlannerProvider),
+  );
+});

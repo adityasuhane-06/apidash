@@ -6,6 +6,7 @@ class TestReviewCard extends StatelessWidget {
   const TestReviewCard({
     super.key,
     required this.testCase,
+    this.referenceLabel,
     this.onApprove,
     this.onReject,
     this.onApproveHealing,
@@ -13,6 +14,7 @@ class TestReviewCard extends StatelessWidget {
   });
 
   final AgenticTestCase testCase;
+  final String? referenceLabel;
   final VoidCallback? onApprove;
   final VoidCallback? onReject;
   final VoidCallback? onApproveHealing;
@@ -46,6 +48,9 @@ class TestReviewCard extends StatelessWidget {
     final canShowReviewActions = onApprove != null || onReject != null;
     final canShowHealingActions =
         onApproveHealing != null || onRejectHealing != null;
+    final titleText = (referenceLabel ?? '').trim().isEmpty
+        ? testCase.title
+        : '${referenceLabel!.trim()} - ${testCase.title}';
 
     return Card(
       child: Padding(
@@ -57,7 +62,7 @@ class TestReviewCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    testCase.title,
+                    titleText,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),

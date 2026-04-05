@@ -2,7 +2,7 @@ import '../consts.dart';
 import '../models/models.dart';
 import 'model_providers/model_providers.dart';
 
-enum ModelAPIProvider { openai, anthropic, gemini, azureopenai, ollama }
+enum ModelAPIProvider { openai, anthropic, gemini, azureopenai, ollama, zai }
 
 final kModelProvidersMap = {
   ModelAPIProvider.openai: OpenAIModel.instance,
@@ -10,12 +10,14 @@ final kModelProvidersMap = {
   ModelAPIProvider.gemini: GeminiModel.instance,
   ModelAPIProvider.azureopenai: AzureOpenAIModel.instance,
   ModelAPIProvider.ollama: OllamaModel.instance,
+  ModelAPIProvider.zai: ZAIModel.instance,
 };
 
 const kAnthropicUrl = 'https://api.anthropic.com/v1/messages';
 const kGeminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models';
 const kOpenAIUrl = 'https://api.openai.com/v1/chat/completions';
 const kOllamaUrl = '$kBaseOllamaUrl/v1/chat/completions';
+const kZAIUrl = 'https://api.z.ai/api/paas/v4/chat/completions';
 
 final kDefaultAiRequestModel = AIRequestModel(
   url: '',

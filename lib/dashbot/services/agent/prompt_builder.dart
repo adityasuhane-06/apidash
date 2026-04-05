@@ -8,6 +8,7 @@ class PromptBuilder {
     RequestModel? req,
     ChatMessageType type, {
     String? overrideLanguage,
+    String? priorRunSummary,
     List<ChatMessage> history = const [],
   }) {
     final historyBlock = buildHistoryBlock(history);
@@ -16,6 +17,7 @@ class PromptBuilder {
       req,
       type,
       overrideLanguage: overrideLanguage,
+      priorRunSummary: priorRunSummary,
     );
     return [
       if (task != null) task,
@@ -61,6 +63,7 @@ class PromptBuilder {
     RequestModel? req,
     ChatMessageType type, {
     String? overrideLanguage,
+    String? priorRunSummary,
   }) {
     if (req == null) return null;
     final http = req.httpRequestModel;
@@ -131,6 +134,14 @@ class PromptBuilder {
         return null;
       case ChatMessageType.importOpenApi:
         return null;
+      case ChatMessageType.agenticWorkflow:
+        return prompts.agenticWorkflowPrompt(
+          url: http?.url,
+          method: http?.method.name.toUpperCase(),
+          headersMap: http?.headersMap,
+          body: http?.body,
+          priorRunSummary: priorRunSummary,
+        );
       case ChatMessageType.general:
         return prompts.generalInteractionPrompt();
     }
@@ -167,6 +178,8 @@ class PromptBuilder {
         return "I'd like to import an OpenAPI specification";
       case ChatMessageType.general:
         return "Hello";
+      case ChatMessageType.agenticWorkflow:
+        return "Plan and execute an agentic API testing workflow for this request.";
     }
   }
 }

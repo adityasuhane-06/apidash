@@ -1,6 +1,7 @@
 import 'package:apidash/dashbot/constants.dart';
 import 'package:apidash/dashbot/models/chat_action.dart';
 import 'package:apidash/dashbot/models/chat_attachment.dart';
+import 'package:apidash/dashbot/models/chat_state.dart';
 import 'package:apidash/dashbot/providers/chat_viewmodel.dart';
 import 'package:apidash/dashbot/providers/dashbot_window_notifier.dart';
 
@@ -8,11 +9,16 @@ class TestChatViewmodel extends ChatViewmodel {
   TestChatViewmodel(super.ref);
 
   final List<ChatAction> applyAutoFixCalls = [];
+  final List<ChatAction> applyAgentLoopActionCalls = [];
   final List<({String text, ChatMessageType type, bool countAsUser})>
       sendMessageCalls = [];
   final List<ChatAttachment> openApiAttachmentCalls = [];
 
   bool throwOnApplyAutoFix = false;
+
+  void setState(ChatState newState) {
+    state = newState;
+  }
 
   @override
   Future<void> applyAutoFix(ChatAction action) async {
@@ -20,6 +26,11 @@ class TestChatViewmodel extends ChatViewmodel {
     if (throwOnApplyAutoFix) {
       throw Exception('applyAutoFix error');
     }
+  }
+
+  @override
+  Future<void> applyAgentLoopAction(ChatAction action) async {
+    applyAgentLoopActionCalls.add(action);
   }
 
   @override

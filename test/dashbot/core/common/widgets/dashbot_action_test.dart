@@ -184,6 +184,35 @@ void main() {
       });
     });
 
+    group('Agent loop action cases', () {
+      test('returns DashbotAgentLoopActionButton for workflow target', () {
+        const action = ChatAction(
+          action: 'execute_step',
+          target: 'agentic_workflow',
+          actionType: ChatActionType.executeStep,
+          targetType: ChatActionTarget.agenticWorkflow,
+        );
+
+        final widget = DashbotActionWidgetFactory.build(action);
+
+        expect(widget, isA<DashbotAgentLoopActionButton>());
+        expect((widget as DashbotAgentLoopActionButton).action, equals(action));
+      });
+
+      test('returns null when workflow action has non-workflow target', () {
+        const action = ChatAction(
+          action: 'execute_step',
+          target: 'httpRequestModel',
+          actionType: ChatActionType.executeStep,
+          targetType: ChatActionTarget.httpRequestModel,
+        );
+
+        final widget = DashbotActionWidgetFactory.build(action);
+
+        expect(widget, isNull);
+      });
+    });
+
     group('ChatActionType.noAction cases', () {
       test('returns DashbotImportNowButton when action is import_now_openapi',
           () {

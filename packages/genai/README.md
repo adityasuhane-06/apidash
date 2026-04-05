@@ -109,13 +109,14 @@ final request = request.copyWith(
 
 ## 📡 Supported Providers
 
-| Provider     | Enum Value                     | Default URL                                               |
-| ------------ | ------------------------------ | --------------------------------------------------------- |
-| OpenAI       | `ModelAPIProvider.openai`      | `https://api.openai.com/v1/chat/completions`              |
-| Gemini       | `ModelAPIProvider.gemini`      | `https://generativelanguage.googleapis.com/v1beta/models` |
-| Anthropic    | `ModelAPIProvider.anthropic`   | `https://api.anthropic.com/v1/messages`                   |
-| Azure OpenAI | `ModelAPIProvider.azureopenai` | Provided by Azure deployment                              |
-| Ollama       | `ModelAPIProvider.ollama`      | `$kBaseOllamaUrl/v1/chat/completions`                     |
+| Provider     | Enum Value                     | Default URL                                                |
+| ------------ | ------------------------------ | ---------------------------------------------------------- |
+| OpenAI       | `ModelAPIProvider.openai`      | `https://api.openai.com/v1/chat/completions`               |
+| Z.AI         | `ModelAPIProvider.zai`         | `https://api.z.ai/api/paas/v4/chat/completions`            |
+| Gemini       | `ModelAPIProvider.gemini`      | `https://generativelanguage.googleapis.com/v1beta/models`  |
+| Anthropic    | `ModelAPIProvider.anthropic`   | `https://api.anthropic.com/v1/messages`                    |
+| Azure OpenAI | `ModelAPIProvider.azureopenai` | Provided by Azure deployment                               |
+| Ollama       | `ModelAPIProvider.ollama`      | `$kBaseOllamaUrl/v1/chat/completions`                      |
 
 ---
 
@@ -135,7 +136,8 @@ processGenAIStreamOutput(
 
 ## 🔒 Authentication
 
-- **OpenAI / Anthropic / Azure OpenAI** → API key passed as HTTP header.
+- **OpenAI / Z.AI / Anthropic / Azure OpenAI** → API key passed as HTTP
+  header.
 - **Gemini** → API key passed as query param `?key=YOUR_API_KEY`.
 - **Ollama** → local server, no key required.
 

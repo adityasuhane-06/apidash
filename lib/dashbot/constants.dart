@@ -9,6 +9,7 @@ enum ChatMessageType {
   generateCode,
   importCurl,
   importOpenApi,
+  agenticWorkflow,
   general
 }
 
@@ -24,6 +25,13 @@ enum ChatActionType {
   applyCurl('apply_curl'),
   applyOpenApi('apply_openapi'),
   downloadDoc('download_doc'),
+  proposePlan('propose_plan'),
+  approvePlan('approve_plan'),
+  rejectPlan('reject_plan'),
+  skipStep('skip_step'),
+  executeStep('execute_step'),
+  confirmSatisfaction('confirm_satisfaction'),
+  requestChanges('request_changes'),
   other('other'),
   noAction('no_action'),
   uploadAsset('upload_asset');
@@ -39,6 +47,7 @@ enum ChatActionTarget {
   code,
   attachment,
   documentation,
+  agenticWorkflow,
 }
 
 ChatActionType chatActionTypeFromString(String s) {
@@ -49,8 +58,15 @@ ChatActionType chatActionTypeFromString(String s) {
 }
 
 ChatActionTarget chatActionTargetFromString(String s) {
+  final normalized = s.trim();
+  if (normalized == 'agentic_workflow') {
+    return ChatActionTarget.agenticWorkflow;
+  }
+  if (normalized == 'http_request_model') {
+    return ChatActionTarget.httpRequestModel;
+  }
   return ChatActionTarget.values.firstWhere(
-    (target) => target.name == s,
+    (target) => target.name == normalized,
     orElse: () => ChatActionTarget.httpRequestModel,
   );
 }

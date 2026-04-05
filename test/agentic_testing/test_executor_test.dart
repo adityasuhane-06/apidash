@@ -77,6 +77,61 @@ void main() {
       expect(results.single.failureType, TestFailureType.bodyValidationFailed);
     });
 
+    test('verifies top-level field presence and array type', () async {
+      final executor = AgenticTestExecutor(
+        executeHttpRequest: (requestId, apiType, requestModel) async {
+          return (
+            Response('{"data":[{"id":1}]}', 200),
+            const Duration(milliseconds: 75),
+            null,
+          );
+        },
+      );
+
+      final results = await executor.executeTests(
+        tests: <AgenticTestCase>[
+          _approvedTestCase(
+            assertions: const <String>[
+              "Response body has a top-level field named 'data'",
+              "The 'data' field is an array",
+            ],
+          ),
+        ],
+        defaultHeaders: const <String, String>{},
+      );
+
+      expect(results.single.executionStatus, TestExecutionStatus.passed);
+      expect(results.single.failureType, TestFailureType.none);
+      expect(
+        results.single.assertionReport.any((line) => line.startsWith('PASS:')),
+        isTrue,
+      );
+    });
+
+    test('fails when top-level field exists but type mismatches', () async {
+      final executor = AgenticTestExecutor(
+        executeHttpRequest: (requestId, apiType, requestModel) async {
+          return (
+            Response('{"data":{"id":1}}', 200),
+            const Duration(milliseconds: 80),
+            null,
+          );
+        },
+      );
+
+      final results = await executor.executeTests(
+        tests: <AgenticTestCase>[
+          _approvedTestCase(
+            assertions: const <String>["The 'data' field is an array"],
+          ),
+        ],
+        defaultHeaders: const <String, String>{},
+      );
+
+      expect(results.single.executionStatus, TestExecutionStatus.failed);
+      expect(results.single.failureType, TestFailureType.bodyValidationFailed);
+    });
+
     test('classifies response-time failures', () async {
       final executor = AgenticTestExecutor(
         executeHttpRequest: (requestId, apiType, requestModel) async {
@@ -120,6 +175,76 @@ void main() {
       expect(results.single.executionStatus, TestExecutionStatus.skipped);
       expect(results.single.failureType, TestFailureType.unsupportedAssertion);
     });
+
+    test('evaluates python-style response.json assertions', () async {
+      final executor = AgenticTestExecutor(
+        executeHttpRequest: (requestId, apiType, requestModel) async {
+          return (
+            Response(
+              '{"id":1,"name":"Alice","email":"alice@example.com"}',
+              200,
+            ),
+            const Duration(milliseconds: 55),
+            null,
+          );
+        },
+      );
+
+      final results = await executor.executeTests(
+        tests: <AgenticTestCase>[
+          _approvedTestCase(
+            assertions: const <String>[
+              "'id' in response.json()",
+              "response.json().get('id') == 1",
+              "isinstance(response.json().get('name'), str)",
+            ],
+          ),
+        ],
+        defaultHeaders: const <String, String>{},
+      );
+
+      expect(results.single.executionStatus, TestExecutionStatus.passed);
+      expect(results.single.failureType, TestFailureType.none);
+    });
+
+    test(
+      'fails python-style response.json field assertions when mismatched',
+      () async {
+        final executor = AgenticTestExecutor(
+          executeHttpRequest: (requestId, apiType, requestModel) async {
+            return (
+              Response('{"id":"1","name":"Alice"}', 200),
+              const Duration(milliseconds: 55),
+              null,
+            );
+          },
+        );
+
+        final results = await executor.executeTests(
+          tests: <AgenticTestCase>[
+            _approvedTestCase(
+              assertions: const <String>[
+                "response.json().get('id') == 1",
+                "isinstance(response.json().get('id'), int)",
+              ],
+            ),
+          ],
+          defaultHeaders: const <String, String>{},
+        );
+
+        expect(results.single.executionStatus, TestExecutionStatus.failed);
+        expect(
+          results.single.failureType,
+          TestFailureType.bodyValidationFailed,
+        );
+        expect(
+          results.single.assertionReport.any(
+            (line) => line.startsWith('FAIL:'),
+          ),
+          isTrue,
+        );
+      },
+    );
 
     test('marks passing assertions with no failure type', () async {
       final executor = AgenticTestExecutor(
