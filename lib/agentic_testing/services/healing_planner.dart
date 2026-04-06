@@ -10,7 +10,7 @@ class AgenticTestHealingPlanner {
   }
 
   AgenticTestCase _planForTest(AgenticTestCase testCase) {
-    if (testCase.executionStatus != TestExecutionStatus.failed) {
+    if (!_isHealingCandidate(testCase)) {
       return testCase.copyWith(
         healingDecision: TestHealingDecision.none,
         clearHealingSuggestion: true,
@@ -24,6 +24,14 @@ class AgenticTestHealingPlanner {
       healingAssertions: plan.$2,
       healingDecision: TestHealingDecision.pending,
     );
+  }
+
+  bool _isHealingCandidate(AgenticTestCase testCase) {
+    if (testCase.executionStatus == TestExecutionStatus.failed) {
+      return true;
+    }
+    return testCase.executionStatus == TestExecutionStatus.skipped &&
+        testCase.failureType == TestFailureType.unsupportedAssertion;
   }
 
   (String, List<String>) _buildPlan(AgenticTestCase testCase) {

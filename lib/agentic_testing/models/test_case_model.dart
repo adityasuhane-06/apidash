@@ -251,6 +251,9 @@ class AgenticTestCase {
           : 'Request behaves as expected.',
       assertions: assertions,
       confidence: _parseConfidence(json['confidence']),
+      decision: _parseReviewDecision(
+        json['decision'] ?? json['review_decision'],
+      ),
       executionStatus: _parseExecutionStatus(json['execution_status']),
       executionSummary: (json['execution_summary'] as String?)?.trim(),
       assertionReport: _parseStringList(json['assertion_report']),
@@ -293,6 +296,14 @@ class AgenticTestCase {
     return TestExecutionStatus.values.firstWhere(
       (status) => status.name.toLowerCase() == raw,
       orElse: () => TestExecutionStatus.notRun,
+    );
+  }
+
+  static TestReviewDecision _parseReviewDecision(dynamic value) {
+    final raw = value?.toString().trim().toLowerCase();
+    return TestReviewDecision.values.firstWhere(
+      (decision) => decision.name.toLowerCase() == raw,
+      orElse: () => TestReviewDecision.pending,
     );
   }
 

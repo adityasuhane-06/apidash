@@ -228,4 +228,53 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
     expect(find.textContaining('Executing approved tests'), findsWidgets);
   });
+
+  testWidgets(
+    'ChatBubble renders failure analysis section for healing review payload',
+    (tester) async {
+      const message = '''
+{
+  "explanation":"Execution completed.",
+  "mcp_app":{
+    "resourceUri":"ui://agentic/healing-review",
+    "modelContext":{
+      "passedCount":1,
+      "failedCount":1,
+      "skippedCount":0,
+      "notRunCount":0,
+      "tests":[
+        {
+          "title":"Auth check",
+          "method":"GET",
+          "endpoint":"https://api.apidash.dev/users/1",
+          "decision":"approved",
+          "executionStatus":"failed",
+          "failureType":"status_code_mismatch",
+          "assertionReport":["FAIL: Response status is 401 or 403 (actual: 200)"],
+          "responseStatusCode":200,
+          "responseTimeMs":900
+        }
+      ]
+    }
+  }
+}
+''';
+
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: ChatBubble(message: message, role: MessageRole.system),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Failure Analysis Report'), findsOneWidget);
+      expect(find.textContaining('T1 - Auth check'), findsWidgets);
+      expect(find.text('Copy Failure Analysis'), findsOneWidget);
+    },
+  );
 }

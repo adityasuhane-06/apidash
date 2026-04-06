@@ -374,5 +374,82 @@ void main() {
         AgenticWorkflowState.awaitingApproval,
       );
     });
+
+    test(
+      'analyze step runs for unsupported skipped assertions and opens healing review',
+      () async {
+        final machine = AgenticTestingStateMachine(
+          testGenerator: _FakeGenerator(
+            tests: const [
+              AgenticTestCase(
+                id: 't1',
+                title: 'ID check',
+                description: 'Ensure body id is 1',
+                method: 'GET',
+                endpoint: '/users/1',
+                expectedOutcome: 'id matches',
+                assertions: ["response.body.id === 1"],
+              ),
+            ],
+          ),
+          testExecutor: _FakeExecutor(
+            ({required tests, required defaultHeaders, requestBody}) async =>
+                tests
+                    .map(
+                      (testCase) => testCase.copyWith(
+                        executionStatus: TestExecutionStatus.skipped,
+                        failureType: TestFailureType.unsupportedAssertion,
+                      ),
+                    )
+                    .toList(),
+          ),
+          healingPlanner: const AgenticTestHealingPlanner(),
+          checkpointStorage: _InMemoryCheckpointStorage(),
+        );
+
+        await machine.startGeneration(
+          endpoint: 'https://api.apidash.dev/users/1',
+        );
+        machine.approveAll();
+        await machine.executeApprovedTests();
+        expect(machine.state.failedCount, 0);
+        expect(machine.state.unsupportedSkippedCount, 1);
+
+        final basePlan = coordinator.createPlan(goal: 'goal');
+        final analyzePlan = basePlan.copyWith(
+          steps: [
+            basePlan.steps[0].copyWith(status: AgentPlanStepStatus.completed),
+            basePlan.steps[1].copyWith(status: AgentPlanStepStatus.completed),
+            basePlan.steps[2].copyWith(status: AgentPlanStepStatus.completed),
+            ...basePlan.steps.sublist(3),
+          ],
+        );
+        final session = AgentLoopSession(
+          requestId: 'r1',
+          stage: AgentLoopStage.awaitingApproval,
+          plan: analyzePlan,
+        );
+
+        final result = await coordinator.executeNextStep(
+          session: session,
+          context: const AgentLoopExecutionContext(
+            endpoint: 'https://api.apidash.dev/users/1',
+            method: 'GET',
+            headers: {},
+          ),
+          machine: machine,
+        );
+
+        expect(
+          result.session.plan?.steps[3].status,
+          AgentPlanStepStatus.completed,
+        );
+        expect(
+          machine.state.workflowState,
+          AgenticWorkflowState.awaitingHealApproval,
+        );
+        expect(machine.state.healPendingCount, 1);
+      },
+    );
   });
 }

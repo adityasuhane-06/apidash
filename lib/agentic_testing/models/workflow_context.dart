@@ -97,6 +97,17 @@ class AgenticWorkflowContext {
       )
       .length;
 
+  int get unsupportedSkippedCount => generatedTests
+      .where(
+        (testCase) =>
+            testCase.executionStatus == TestExecutionStatus.skipped &&
+            testCase.failureType == TestFailureType.unsupportedAssertion,
+      )
+      .length;
+
+  bool get hasAnalyzableFailures =>
+      failedCount > 0 || unsupportedSkippedCount > 0;
+
   int get notRunCount => generatedTests
       .where(
         (testCase) => testCase.executionStatus == TestExecutionStatus.notRun,

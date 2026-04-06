@@ -243,10 +243,11 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
       return;
     }
 
-    if (state.failedCount == 0) {
+    if (!state.hasAnalyzableFailures) {
       _updateState(
         state.copyWith(
-          errorMessage: 'No failed tests found. Healing is not required.',
+          errorMessage:
+              'No failed or unsupported-skipped tests found. Healing is not required.',
         ),
       );
       return;
@@ -267,7 +268,7 @@ class AgenticTestingStateMachine extends StateNotifier<AgenticWorkflowContext> {
         AgenticWorkflowState.awaitingHealApproval,
         generatedTests: planned,
         statusMessage:
-            'Generated healing recommendations for failed tests. Original assertions stay unchanged unless manually edited.',
+            'Generated healing recommendations for failed/unsupported tests. Original assertions stay unchanged unless manually edited.',
         clearErrorMessage: true,
       );
     } catch (e) {

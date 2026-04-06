@@ -51,7 +51,11 @@ class _FakeHealingPlanner extends AgenticTestHealingPlanner {
     required List<AgenticTestCase> tests,
   }) {
     return tests.map((testCase) {
-      if (testCase.executionStatus != TestExecutionStatus.failed) {
+      final isFailed = testCase.executionStatus == TestExecutionStatus.failed;
+      final isUnsupportedSkipped =
+          testCase.executionStatus == TestExecutionStatus.skipped &&
+          testCase.failureType == TestFailureType.unsupportedAssertion;
+      if (!isFailed && !isUnsupportedSkipped) {
         return testCase;
       }
       return testCase.copyWith(
@@ -432,6 +436,54 @@ void main() {
         AgenticWorkflowState.awaitingHealApproval,
       );
       expect(machine.state.healPendingCount, 1);
+    });
+
+    test('generates healing plans for unsupported skipped tests', () async {
+      final machine = buildMachine(
+        generator: _FakeGenerator([
+          const AgenticTestCase(
+            id: 't1',
+            title: 'ID path consistency',
+            description: 'Check id from response body.',
+            method: 'GET',
+            endpoint: 'https://api.apidash.dev/users/1',
+            expectedOutcome: 'Body id matches requested id.',
+            assertions: ["response.body.id === 1"],
+          ),
+        ]),
+        executor: _FakeExecutor(
+          ({
+            required tests,
+            required defaultHeaders,
+            requestBody,
+          }) async => tests
+              .map(
+                (t) => t.copyWith(
+                  executionStatus: TestExecutionStatus.skipped,
+                  failureType: TestFailureType.unsupportedAssertion,
+                  assertionReport: const <String>[
+                    'SKIP: response.body.id === 1 (not auto-verifiable yet)',
+                  ],
+                ),
+              )
+              .toList(),
+        ),
+      );
+
+      await machine.startGeneration(
+        endpoint: 'https://api.apidash.dev/users/1',
+      );
+      machine.approveAll();
+      await machine.executeApprovedTests();
+      await machine.generateHealingPlans();
+
+      expect(
+        machine.state.workflowState,
+        AgenticWorkflowState.awaitingHealApproval,
+      );
+      expect(machine.state.healPendingCount, 1);
+      expect(machine.state.failedCount, 0);
+      expect(machine.state.unsupportedSkippedCount, 1);
     });
 
     test(

@@ -260,12 +260,13 @@ class AgentLoopCoordinatorImpl implements AgentLoopCoordinator {
           );
           break;
         case AgentPlanStepType.analyze:
-          if (machine.state.failedCount == 0) {
+          if (!machine.state.hasAnalyzableFailures) {
             workingSession = _skipStep(
               workingSession,
               nextIndex,
               machine.state,
-              note: 'No failures found. Analysis skipped.',
+              note:
+                  'No failed or unsupported-skipped tests found. Analysis skipped.',
             );
           } else {
             await machine.generateHealingPlans();
